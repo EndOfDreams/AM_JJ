@@ -6,7 +6,7 @@ module.exports = {
         orientation: "portrait",
         icon: "./assets/images/icon.png",
         scheme: "amjj",
-        userInterfaceStyle: "automatic",
+        userInterfaceStyle: "light", // STORE_COMPLIANCE: Explicitly set to light until dark mode is fully implemented
         newArchEnabled: true,
         ios: {
             supportsTablet: true,
@@ -15,7 +15,11 @@ module.exports = {
             infoPlist: {
                 NSCameraUsageDescription: "Permettre à $(PRODUCT_NAME) d'accéder à votre caméra pour prendre des photos et vidéos du mariage.",
                 NSPhotoLibraryUsageDescription: "Permettre à $(PRODUCT_NAME) d'accéder à vos photos pour les partager avec les invités du mariage.",
-                NSPhotoLibraryAddUsageDescription: "Permettre à $(PRODUCT_NAME) de sauvegarder les photos et vidéos du mariage dans votre galerie."
+                NSPhotoLibraryAddUsageDescription: "Permettre à $(PRODUCT_NAME) de sauvegarder les photos et vidéos du mariage dans votre galerie.",
+                // STORE_COMPLIANCE: Required for video recording with audio
+                NSMicrophoneUsageDescription: "Permettre à $(PRODUCT_NAME) d'accéder à votre microphone pour enregistrer des vidéos avec son.",
+                // STORE_COMPLIANCE: Declare encryption usage for App Store
+                ITSAppUsesNonExemptEncryption: false
             },
             privacyManifests: {
                 NSPrivacyAccessedAPITypes: [
@@ -46,7 +50,9 @@ module.exports = {
                 "READ_EXTERNAL_STORAGE",
                 "WRITE_EXTERNAL_STORAGE",
                 "READ_MEDIA_IMAGES",
-                "READ_MEDIA_VIDEO"
+                "READ_MEDIA_VIDEO",
+                "RECEIVE_BOOT_COMPLETED",
+                "SCHEDULE_EXACT_ALARM"
             ]
         },
         web: {
@@ -81,6 +87,12 @@ module.exports = {
                     savePhotosPermission: "Permettre à $(PRODUCT_NAME) de sauvegarder les photos et vidéos du mariage dans votre galerie.",
                     isAccessMediaLocationEnabled: true
                 }
+            ],
+            [
+                "expo-notifications",
+                {
+                    color: "#EC4899"
+                }
             ]
         ],
         experiments: {
@@ -89,7 +101,10 @@ module.exports = {
         },
         extra: {
             supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
-            supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+            supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+            // STORE_COMPLIANCE: TODO - Replace with your actual privacy policy URL before store submission
+            privacyPolicyUrl: "https://example.com/privacy-policy"
+            // NOTE: Add eas.projectId here when you run `eas init`
         }
     }
 };
