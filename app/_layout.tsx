@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Notifications from 'expo-notifications';
 import { Stack, useRouter, useSegments } from "expo-router";
 import React, { Component, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, AppState, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { configureNotificationHandler, setupNotificationChannels } from '@/lib/notifications';
 
@@ -146,6 +146,26 @@ export default function RootLayout() {
       }
     );
 
+    // NEW: Refresh push token when app comes to foreground
+    const appStateSubscription = AppState.addEventListener('change', async (nextAppState) => {
+      if (nextAppState === 'active') {
+        try {
+          const userInfo = await AsyncStorage.getItem('wedding_user_info');
+          if (userInfo) {
+            const user = JSON.parse(userInfo);
+            if (user.user_id) {
+              const { registerForPushNotifications } = await import('@/lib/notifications');
+              registerForPushNotifications(user.user_id).catch(err => {
+                if (__DEV__) console.warn('[Layout] Token refresh failed:', err);
+              });
+            }
+          }
+        } catch (err) {
+          if (__DEV__) console.warn('[Layout] Error refreshing token:', err);
+        }
+      }
+    });
+
     // Check if app was opened from a killed state via notification
     Notifications.getLastNotificationResponseAsync().then(response => {
       if (response) {
@@ -156,6 +176,7 @@ export default function RootLayout() {
 
     return () => {
       notifResponseListener.current?.remove();
+      appStateSubscription?.remove();
     };
   }, []);
 

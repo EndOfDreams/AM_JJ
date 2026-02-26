@@ -1,27 +1,52 @@
 module.exports = {
     expo: {
-        name: "AM_jj",
-        slug: "AM_jj",
+        name: "WedSnap",
+        slug: "wedsnap",
+        owner: "endofdreams32",
         version: "1.0.0",
         orientation: "portrait",
         icon: "./assets/images/icon.png",
-        scheme: "amjj",
+        scheme: "wedsnap",
         userInterfaceStyle: "light", // STORE_COMPLIANCE: Explicitly set to light until dark mode is fully implemented
         newArchEnabled: true,
         ios: {
-            supportsTablet: true,
+            supportsTablet: false,  // STORE_COMPLIANCE: App is not optimized for iPad
             bundleIdentifier: "com.camilleperes.amjj",
             buildNumber: "1",
             infoPlist: {
-                NSCameraUsageDescription: "Permettre à $(PRODUCT_NAME) d'accéder à votre caméra pour prendre des photos et vidéos du mariage.",
-                NSPhotoLibraryUsageDescription: "Permettre à $(PRODUCT_NAME) d'accéder à vos photos pour les partager avec les invités du mariage.",
-                NSPhotoLibraryAddUsageDescription: "Permettre à $(PRODUCT_NAME) de sauvegarder les photos et vidéos du mariage dans votre galerie.",
+                NSCameraUsageDescription: "Permettre à $(PRODUCT_NAME) d'accéder à votre caméra pour prendre des photos et vidéos de votre événement.",
+                NSPhotoLibraryUsageDescription: "Permettre à $(PRODUCT_NAME) d'accéder à vos photos pour les partager avec les autres invités.",
+                NSPhotoLibraryAddUsageDescription: "Permettre à $(PRODUCT_NAME) de sauvegarder les photos et vidéos dans votre galerie.",
                 // STORE_COMPLIANCE: Required for video recording with audio
                 NSMicrophoneUsageDescription: "Permettre à $(PRODUCT_NAME) d'accéder à votre microphone pour enregistrer des vidéos avec son.",
                 // STORE_COMPLIANCE: Declare encryption usage for App Store
                 ITSAppUsesNonExemptEncryption: false
             },
             privacyManifests: {
+                // STORE_COMPLIANCE: Declare no tracking
+                NSPrivacyTracking: false,
+                NSPrivacyTrackingDomains: [],
+                // STORE_COMPLIANCE: Declare collected data types
+                NSPrivacyCollectedDataTypes: [
+                    {
+                        NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypePhotosorVideos",
+                        NSPrivacyCollectedDataTypeLinked: false,
+                        NSPrivacyCollectedDataTypeTracking: false,
+                        NSPrivacyCollectedDataTypePurposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
+                    },
+                    {
+                        NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypeEmailAddress",
+                        NSPrivacyCollectedDataTypeLinked: true,
+                        NSPrivacyCollectedDataTypeTracking: false,
+                        NSPrivacyCollectedDataTypePurposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
+                    },
+                    {
+                        NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypeName",
+                        NSPrivacyCollectedDataTypeLinked: true,
+                        NSPrivacyCollectedDataTypeTracking: false,
+                        NSPrivacyCollectedDataTypePurposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
+                    }
+                ],
                 NSPrivacyAccessedAPITypes: [
                     {
                         NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryFileTimestamp",
@@ -47,12 +72,8 @@ module.exports = {
             versionCode: 1,
             permissions: [
                 "CAMERA",
-                "READ_EXTERNAL_STORAGE",
-                "WRITE_EXTERNAL_STORAGE",
                 "READ_MEDIA_IMAGES",
-                "READ_MEDIA_VIDEO",
-                "RECEIVE_BOOT_COMPLETED",
-                "SCHEDULE_EXACT_ALARM"
+                "READ_MEDIA_VIDEO"
             ]
         },
         web: {
@@ -76,15 +97,15 @@ module.exports = {
             [
                 "expo-camera",
                 {
-                    cameraPermission: "Permettre à $(PRODUCT_NAME) d'accéder à votre caméra pour prendre des photos et vidéos du mariage.",
+                    cameraPermission: "Permettre à $(PRODUCT_NAME) d'accéder à votre caméra pour prendre des photos et vidéos de votre événement.",
                     microphonePermission: "Permettre à $(PRODUCT_NAME) d'accéder à votre microphone pour enregistrer des vidéos avec son."
                 }
             ],
             [
                 "expo-media-library",
                 {
-                    photosPermission: "Permettre à $(PRODUCT_NAME) d'accéder à vos photos pour les partager avec les invités du mariage.",
-                    savePhotosPermission: "Permettre à $(PRODUCT_NAME) de sauvegarder les photos et vidéos du mariage dans votre galerie.",
+                    photosPermission: "Permettre à $(PRODUCT_NAME) d'accéder à vos photos pour les partager avec les autres invités.",
+                    savePhotosPermission: "Permettre à $(PRODUCT_NAME) de sauvegarder les photos et vidéos dans votre galerie.",
                     isAccessMediaLocationEnabled: true
                 }
             ],
@@ -102,9 +123,12 @@ module.exports = {
         extra: {
             supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
             supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
-            // STORE_COMPLIANCE: TODO - Replace with your actual privacy policy URL before store submission
-            privacyPolicyUrl: "https://example.com/privacy-policy"
-            // NOTE: Add eas.projectId here when you run `eas init`
+            // STORE_COMPLIANCE: Privacy Policy hosted on GitHub Pages
+            privacyPolicyUrl: "https://endofdreams.github.io/AM_JJ/privacy-policy.html",
+            // EAS configuration for push notifications
+            eas: {
+                projectId: "13483632-e9cc-480c-8163-2479de2662a0"
+            }
         }
     }
 };

@@ -250,6 +250,15 @@ export async function signIn(name: string, password: string) {
  */
 export async function signOut() {
   try {
+    // NEW: Remove push token before logout
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { removePushToken } = await import('./notifications');
+      await removePushToken(user.id).catch(err => {
+        if (__DEV__) console.warn('[Auth] Failed to remove token:', err);
+      });
+    }
+
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
     if (__DEV__) console.log('[Auth] Logout successful');
@@ -299,58 +308,81 @@ export async function getCurrentUser() {
 
 /**
  * STORE_COMPLIANCE: Account deletion - Required by Apple App Store since June 2022
- * Supprime les données utilisateur et déconnecte le compte
+ * Supprime complètement les données utilisateur via Edge Function
  *
- * Note: Cette fonction supprime les données associées à l'utilisateur.
- * La suppression complète du compte Supabase Auth nécessite une action admin côté serveur.
+ * Cette fonction appelle une Edge Function qui utilise le service role pour:
+ * 1. Anonymiser les photos créées
+ * 2. Retirer les likes de l'utilisateur
+ * 3. Supprimer le profil guest
+ * 4. Supprimer le compte Auth (nécessite service role)
  */
 export async function deleteAccount(userEmail: string): Promise<void> {
   try {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
-    if (userError || !user) {
+    if (sessionError || !session) {
       throw new Error('Utilisateur non connecté');
     }
 
-    if (__DEV__) console.log('[Auth] Starting account deletion for:', userEmail);
+    if (__DEV__) console.log('[Auth] Starting complete account deletion via Edge Function');
 
-    // 1. Anonymiser les photos créées par cet utilisateur (garder le contenu, retirer l'attribution)
-    const { error: photosError } = await supabase
-      .from('photos')
-      .update({ created_by: 'Utilisateur supprimé' })
-      .eq('created_by', userEmail);
-
-    if (photosError) {
-      if (__DEV__) console.error('[Auth] Error anonymizing photos:', photosError);
-      // Continue anyway - photos might not exist
-    }
-
-    // 2. Supprimer les likes de cet utilisateur sur toutes les photos
-    // Note: This would require fetching all photos and updating liked_by arrays
-    // For now, we leave the likes as-is since they're anonymous
-
-    // 3. Supprimer le profil guest (si RLS le permet)
-    try {
-      const { error: guestError } = await supabase
-        .from('guests')
-        .delete()
-        .eq('user_id', user.id);
-
-      if (guestError) {
-        if (__DEV__) console.error('[Auth] Error deleting guest profile:', guestError);
-        // Continue anyway - RLS might prevent this
+    // Call Edge Function with user's auth token
+    const { data, error } = await supabase.functions.invoke('delete-user-account', {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`
       }
-    } catch (e) {
-      if (__DEV__) console.warn('[Auth] Guest deletion exception ignored');
+    });
+
+    if (error) {
+      if (__DEV__) console.error('[Auth] Edge Function error:', error);
+      throw new Error('Erreur lors de la suppression du compte');
     }
 
-    // 4. Déconnexion
-    await signOut();
+    if (!data?.success) {
+      throw new Error(data?.error || 'Échec de la suppression du compte');
+    }
 
-    if (__DEV__) console.log('[Auth] Account deletion completed');
+    if (__DEV__) console.log('[Auth] Complete account deletion successful');
+
+    // Note: No need to call signOut() - the user will be auto-logged out
+    // since their auth account no longer exists
 
   } catch (error) {
     if (__DEV__) console.error('[Auth] Delete account error:', error);
     throw new Error('Erreur lors de la suppression du compte. Veuillez réessayer.');
+  }
+}
+
+// --- Content Moderation (STORE COMPLIANCE) ---
+
+/**
+ * Signaler un contenu inapproprié
+ * STORE COMPLIANCE: Required for UGC moderation
+ */
+export async function reportContent(
+  photoId: string,
+  reason: string,
+  reporterName?: string
+): Promise<void> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('Vous devez être connecté pour signaler un contenu');
+    }
+
+    const { error } = await supabase.from('reports').insert({
+      photo_id: photoId,
+      reported_by: user.id,
+      reporter_name: reporterName || 'Utilisateur anonyme',
+      reason: reason,
+      status: 'pending'
+    });
+
+    if (error) throw error;
+
+    if (__DEV__) console.log('[Moderation] Content reported:', photoId);
+  } catch (error) {
+    if (__DEV__) console.error('[Moderation] Report error:', error);
+    throw new Error('Erreur lors du signalement. Veuillez réessayer.');
   }
 }

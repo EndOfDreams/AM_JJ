@@ -2,7 +2,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BlurView } from "expo-blur";
 import * as Haptics from 'expo-haptics';
-import { requestNotificationPermission } from '@/lib/notifications';
+import { requestNotificationPermission, registerForPushNotifications } from '@/lib/notifications';
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { CheckCircle2, Heart, Lock, Sparkles, User } from "lucide-react-native";
@@ -408,6 +408,11 @@ export default function Welcome() {
 
       // Request notification permission (non-blocking)
       requestNotificationPermission();
+
+      // Register push token for remote notifications
+      registerForPushNotifications(user.user_id).catch(err => {
+        if (__DEV__) console.warn('[Welcome] Failed to register push token:', err);
+      });
 
       // Success animation
       setIsSuccess(true);

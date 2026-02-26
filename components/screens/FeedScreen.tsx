@@ -1,6 +1,6 @@
 // app/(tabs)/feed.tsx - ULTRA PREMIUM VERSION
 import { PremiumHeader } from '@/components/ui/PremiumHeader';
-import { deleteAccount, signOut, supabase } from '@/lib/supabase';
+import { deleteAccount, reportContent, signOut, supabase } from '@/lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { ResizeMode, Video } from 'expo-av';
@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import {
+    AlertTriangle,
     BadgeCheck,
     Bookmark,
     Clock,
@@ -22,6 +23,7 @@ import {
     Heart,
     ImageOff,
     LogOut,
+    Mail,
     MoreVertical,
     Play,
     Settings,
@@ -40,6 +42,7 @@ import {
     DeviceEventEmitter,
     Dimensions,
     Easing,
+    Linking,
     Modal,
     PanResponder,
     RefreshControl,
@@ -812,6 +815,54 @@ const PhotoModal: React.FC<{
         }
     };
 
+    // STORE COMPLIANCE: UGC Content Moderation
+    const handleReport = () => {
+        setShowOptions(false);
+        Alert.alert(
+            'Signaler un contenu',
+            'Pourquoi signalez-vous ce contenu ?',
+            [
+                {
+                    text: 'Contenu inapproprié',
+                    onPress: () => submitReport('Contenu inapproprié')
+                },
+                {
+                    text: 'Spam ou publicité',
+                    onPress: () => submitReport('Spam ou publicité')
+                },
+                {
+                    text: 'Harcèlement',
+                    onPress: () => submitReport('Harcèlement')
+                },
+                {
+                    text: 'Autre',
+                    onPress: () => submitReport('Autre raison')
+                },
+                {
+                    text: 'Annuler',
+                    style: 'cancel'
+                }
+            ]
+        );
+    };
+
+    const submitReport = async (reason: string) => {
+        try {
+            await reportContent(photo.id, reason);
+            Alert.alert(
+                'Merci',
+                'Votre signalement a été enregistré. Notre équipe va examiner ce contenu.',
+                [{ text: 'OK' }]
+            );
+        } catch (error) {
+            Alert.alert(
+                'Erreur',
+                'Impossible d\'enregistrer le signalement. Veuillez réessayer.',
+                [{ text: 'OK' }]
+            );
+        }
+    };
+
     const panResponder = useRef(
         PanResponder.create({
             onStartShouldSetPanResponder: () => true,
@@ -968,6 +1019,11 @@ const PhotoModal: React.FC<{
                                 <TouchableOpacity style={styles.optionItem} onPress={handleShare}>
                                     <Share2 color="#1F2937" size={20} />
                                     <Text style={styles.optionText}>Partager</Text>
+                                </TouchableOpacity>
+                                <View style={styles.divider} />
+                                <TouchableOpacity style={styles.optionItem} onPress={handleReport}>
+                                    <AlertTriangle color="#F59E0B" size={20} />
+                                    <Text style={[styles.optionText, { color: '#F59E0B' }]}>Signaler</Text>
                                 </TouchableOpacity>
                                 <View style={styles.divider} />
                                 <TouchableOpacity
@@ -1472,6 +1528,21 @@ export default function FeedScreen() {
                                         </View>
                                         <Text style={styles.settingsUserName}>{currentUser || 'Invité'}</Text>
                                     </View>
+
+                                    <View style={styles.settingsDivider} />
+
+                                    {/* STORE COMPLIANCE: Support Contact */}
+                                    <TouchableOpacity
+                                        style={styles.settingsOption}
+                                        onPress={() => {
+                                            Linking.openURL('mailto:contact@wedsnap.app?subject=Support WedSnap');
+                                        }}
+                                    >
+                                        <Mail color="#3B82F6" size={20} />
+                                        <Text style={[styles.settingsOptionText, { color: '#3B82F6' }]}>
+                                            Contacter le support
+                                        </Text>
+                                    </TouchableOpacity>
 
                                     <View style={styles.settingsDivider} />
 
