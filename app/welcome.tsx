@@ -463,14 +463,14 @@ export default function Welcome() {
 
       {/* Top Image Blob */}
       <Image
-        source={require('@/assets/dégradé_rose.png')}
+        source={require('../assets/dégradé_rose.png')}
         style={styles.blobTop}
         resizeMode="cover"
       />
 
       {/* Animated blobs */}
       <Image
-        source={require('@/assets/Dedrade_bleu.png')}
+        source={require('../assets/Dedrade_bleu.png')}
         style={styles.blob1}
         resizeMode="cover"
       />
