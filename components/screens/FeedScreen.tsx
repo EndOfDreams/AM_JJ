@@ -1,6 +1,7 @@
 // app/(tabs)/feed.tsx - ULTRA PREMIUM VERSION
 import { PremiumHeader } from '@/components/ui/PremiumHeader';
-import { deleteAccount, reportContent, signOut, supabase } from '@/lib/supabase';
+import { sendLikeNotification } from '@/lib/notifications';
+import { deleteAccount, deletePhoto, fetchUserLikes, reportContent, signOut, supabase } from '@/lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { ResizeMode, Video } from 'expo-av';
@@ -34,11 +35,12 @@ import {
     User,
     X
 } from 'lucide-react-native';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
     Animated,
+    AppState,
     DeviceEventEmitter,
     Dimensions,
     Easing,
@@ -65,7 +67,6 @@ interface Photo {
     image_url: string;
     media_type: 'photo' | 'video';
     likes: number;
-    liked_by: string[];
     created_at: string;
     created_by?: string;
     caption?: string;
@@ -415,18 +416,37 @@ const PremiumHeroHeader: React.FC<{
     );
 };
 
+const getTimeAgo = (date: string) => {
+    try {
+        const now = new Date();
+        const photoDate = new Date(date);
+        const seconds = Math.floor((now.getTime() - photoDate.getTime()) / 1000);
+
+        if (seconds < 60) return "\u00C0 l'instant";
+        if (seconds < 3600) return `Il y a ${Math.floor(seconds / 60)} min`;
+        if (seconds < 86400) return `Il y a ${Math.floor(seconds / 3600)} h`;
+        return `Il y a ${Math.floor(seconds / 86400)} j`;
+    } catch {
+        return "\u00C0 l'instant";
+    }
+};
+
 // Premium Post Card with Glassmorphism
 const PremiumPostCard: React.FC<{
     photo: Photo;
     currentUser: string | null;
     onLike: () => void;
     onPress: () => void;
+    onDelete?: () => void;
     isNew?: boolean;
     onAnimationComplete?: () => void;
     index: number;
-}> = ({ photo, currentUser, onLike, onPress, isNew = false, onAnimationComplete, index }) => {
+    isBookmarked?: boolean;
+    onBookmark?: () => void;
+    isVideoPlaying?: boolean;
+    hasLiked?: boolean;
+}> = ({ photo, currentUser, onLike, onPress, onDelete, isNew = false, onAnimationComplete, index, isBookmarked = false, onBookmark, isVideoPlaying = false, hasLiked = false }) => {
     const [isImageLoaded, setIsImageLoaded] = useState(false);
-    const [isBookmarked, setIsBookmarked] = useState(false);
     const [isSharing, setIsSharing] = useState(false);
     const [showConfetti, setShowConfetti] = useState(isNew);
 
@@ -475,7 +495,7 @@ const PremiumPostCard: React.FC<{
         }
     }, [isNew, showConfetti]);
 
-    const hasUserLiked = (photo.liked_by || []).includes(currentUser || 'anonymous');
+    const hasUserLiked = hasLiked;
 
     const handleLoad = () => {
         setIsImageLoaded(true);
@@ -568,22 +588,7 @@ const PremiumPostCard: React.FC<{
 
     const handleBookmark = () => {
         Haptics.selectionAsync();
-        setIsBookmarked(!isBookmarked);
-    };
-
-    const getTimeAgo = (date: string) => {
-        try {
-            const now = new Date();
-            const photoDate = new Date(date);
-            const seconds = Math.floor((now.getTime() - photoDate.getTime()) / 1000);
-
-            if (seconds < 60) return "À l'instant";
-            if (seconds < 3600) return `Il y a ${Math.floor(seconds / 60)} min`;
-            if (seconds < 86400) return `Il y a ${Math.floor(seconds / 3600)} h`;
-            return `Il y a ${Math.floor(seconds / 86400)} j`;
-        } catch {
-            return "À l'instant";
-        }
+        if (onBookmark) onBookmark();
     };
 
     return (
@@ -619,12 +624,16 @@ const PremiumPostCard: React.FC<{
                         end={{ x: 1, y: 1 }}
                         style={styles.avatar}
                     >
-                        <User size={20} color="white" />
+                        {photo.created_by?.includes('Camille') ? (
+                            <Text style={{ fontSize: 16 }}>👨</Text>
+                        ) : (
+                            <User size={20} color="white" />
+                        )}
                     </LinearGradient>
                     <View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                             <Text style={styles.username}>
-                                {photo.created_by?.split('@')[0] || 'Invité'}
+                                {photo.created_by || 'Invité'}
                             </Text>
                             {(photo.created_by?.includes('Anne-Marie') ||
                                 photo.created_by?.includes('Jean-Jacques')) ? (
@@ -641,6 +650,16 @@ const PremiumPostCard: React.FC<{
                         </View>
                     </View>
                 </View>
+                {/* Bouton supprimer - visible uniquement sur ses propres photos */}
+                {onDelete && currentUser && photo.created_by === currentUser && (
+                    <TouchableOpacity
+                        onPress={onDelete}
+                        style={styles.deleteButton}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                        <X size={18} color="#9CA3AF" />
+                    </TouchableOpacity>
+                )}
             </View>
 
             {/* Media Container - Full Width */}
@@ -656,14 +675,17 @@ const PremiumPostCard: React.FC<{
                                 source={{ uri: photo.image_url }}
                                 style={styles.media}
                                 resizeMode={ResizeMode.COVER}
-                                shouldPlay={false}
+                                shouldPlay={isVideoPlaying}
+                                isLooping
                                 isMuted={true}
                                 onLoad={handleLoad}
                             />
-                            <View style={styles.videoBadge}>
-                                <Play size={16} color="white" fill="white" />
-                                <Text style={styles.videoBadgeText}>Vidéo</Text>
-                            </View>
+                            {!isVideoPlaying && (
+                                <View style={styles.videoBadge}>
+                                    <Play size={16} color="white" fill="white" />
+                                    <Text style={styles.videoBadgeText}>Vidéo</Text>
+                                </View>
+                            )}
                         </View>
                     ) : (
                         <Image
@@ -734,14 +756,16 @@ const PremiumPostCard: React.FC<{
             )}
 
             {/* Caption */}
-            <View style={styles.captionSection}>
-                <Text style={styles.captionText}>
-                    <Text style={styles.captionUsername}>
-                        {photo.created_by?.split('@')[0] || 'Invité'}
-                    </Text>{' '}
-                    {photo.caption || 'Un moment magique de notre célébration ✨💕'}
-                </Text>
-            </View>
+            {photo.caption && (
+                <View style={styles.captionSection}>
+                    <Text style={styles.captionText}>
+                        <Text style={styles.captionUsername}>
+                            {photo.created_by || 'Invité'}
+                        </Text>{' '}
+                        {photo.caption}
+                    </Text>
+                </View>
+            )}
         </Animated.View>
     );
 };
@@ -966,8 +990,8 @@ const PhotoModal: React.FC<{
                     <BlurView intensity={80} tint="dark" style={styles.bottomBarBlur}>
                         <View style={[styles.bottomBarContent, { paddingBottom: Math.max(insets.bottom, 20) + 20 }]}>
                             <View style={styles.userSection}>
-                                <Text style={styles.userName}>Invité</Text>
-                                <Text style={styles.photoTime}>Il y a quelques instants</Text>
+                                <Text style={styles.userName}>{photo.created_by || 'Invité'}</Text>
+                                <Text style={styles.photoTime}>{getTimeAgo(photo.created_at)}</Text>
                             </View>
                             <TouchableOpacity
                                 onPress={onLike}
@@ -1043,7 +1067,7 @@ const PhotoModal: React.FC<{
 };
 
 // Main Feed Component
-export default function FeedScreen() {
+export default function FeedScreen({ isFocused = false }: { isFocused?: boolean }) {
     const router = useRouter();
     const [photos, setPhotos] = useState<Photo[]>([]);
     const [totalCount, setTotalCount] = useState(0);
@@ -1051,6 +1075,10 @@ export default function FeedScreen() {
     const [refreshing, setRefreshing] = useState(false);
     const [currentUser, setCurrentUser] = useState<string | null>(null);
     const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+    const currentUserEmailRef = useRef<string | null>(null);
+    const [likedPhotoIds, setLikedPhotoIds] = useState<Set<string>>(new Set());
+    const photosRef = useRef<Photo[]>([]);
+    const pendingOptimisticLikesRef = useRef(new Set<string>());
     const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
     const [seenPhotoIds, setSeenPhotoIds] = useState<Set<string>>(new Set());
     const [newPhotoIds, setNewPhotoIds] = useState<Set<string>>(new Set());
@@ -1058,35 +1086,90 @@ export default function FeedScreen() {
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [isDeletingAccount, setIsDeletingAccount] = useState(false);
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+    const [visibleVideoIds, setVisibleVideoIds] = useState<Set<string>>(new Set());
+
+    const viewabilityConfig = useRef({
+        itemVisiblePercentThreshold: 50,
+    }).current;
+
+    const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: Array<{ item: Photo }> }) => {
+        const videoIds = new Set<string>();
+        for (const entry of viewableItems) {
+            if (entry.item.media_type === 'video') {
+                videoIds.add(entry.item.id);
+            }
+        }
+        setVisibleVideoIds(videoIds);
+    }, []);
+    const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
+    const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+    const [downloadProgress, setDownloadProgress] = useState({ current: 0, total: 0 });
+    const [currentPage, setCurrentPage] = useState(0);
+    const [hasMorePhotos, setHasMorePhotos] = useState(true);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const PAGE_SIZE = 30;
 
     const scrollY = useRef(new Animated.Value(0)).current;
+
+    const realtimeCleanupRef = useRef<(() => void) | null>(null);
 
     useEffect(() => {
         const init = async () => {
             const seenIds = await loadSeenPhotos();
+            await loadBookmarks();
             getCurrentUser();
             initialLoad(seenIds);
         };
         init();
-        const cleanup = setupRealtimeSubscription();
+        realtimeCleanupRef.current = setupRealtimeSubscription();
 
         const subscription = DeviceEventEmitter.addListener('media.optimistic', (newItem: any) => {
             if (__DEV__) console.log('Optimistic update received', newItem.media_type);
             setPhotos((prev) => [newItem, ...prev]);
             setTotalCount((prev) => prev + 1);
-            setNewPhotoIds(prevNew => new Set(prevNew).add(newItem.id));
+            setNewPhotoIds(prevNew => { const s = new Set(prevNew); s.add(newItem.id); return s; });
+        });
+
+        // Reconnect realtime when app returns from background
+        const appStateSubscription = AppState.addEventListener('change', (state) => {
+            if (state === 'active') {
+                if (realtimeCleanupRef.current) realtimeCleanupRef.current();
+                realtimeCleanupRef.current = setupRealtimeSubscription();
+                // Refresh data to catch anything missed while backgrounded
+                initialLoad();
+            }
         });
 
         return () => {
-            cleanup();
+            if (realtimeCleanupRef.current) realtimeCleanupRef.current();
             subscription.remove();
+            appStateSubscription.remove();
         };
     }, []);
+
+    // Keep photosRef in sync so realtime callbacks (stale closures) can read current photos
+    useEffect(() => {
+        photosRef.current = photos;
+    }, [photos]);
 
     // A1: Emit unseen photo count for BottomNav badge
     useEffect(() => {
         DeviceEventEmitter.emit('feed.unseenCount', newPhotoIds.size);
     }, [newPhotoIds]);
+
+    // Mark all photos as seen when user LEAVES the feed (badge resets after viewing)
+    const prevFocusedRef = useRef(isFocused);
+    useEffect(() => {
+        if (prevFocusedRef.current && !isFocused && newPhotoIds.size > 0) {
+            // User just left the feed — mark everything as seen
+            const allSeen = new Set(seenPhotoIds);
+            newPhotoIds.forEach(id => allSeen.add(id));
+            setSeenPhotoIds(allSeen);
+            setNewPhotoIds(new Set());
+            AsyncStorage.setItem('wedding_seen_photos', JSON.stringify(Array.from(allSeen)));
+        }
+        prevFocusedRef.current = isFocused;
+    }, [isFocused]);
 
     const setupRealtimeSubscription = () => {
         const channel = supabase
@@ -1097,6 +1180,15 @@ export default function FeedScreen() {
                 (payload) => {
                     const newPhoto = payload.new as Photo;
                     let incrementCount = true;
+
+                    // Check BEFORE setPhotos (using photosRef which is always current) whether
+                    // the optimistic version of this photo was liked while still uploading.
+                    const optimisticItem = photosRef.current.find(
+                        p => (p as any).is_optimistic && p.media_type === newPhoto.media_type
+                    );
+                    const hadPendingLike = optimisticItem
+                        ? pendingOptimisticLikesRef.current.has(optimisticItem.id)
+                        : false;
 
                     setPhotos((prev) => {
                         if (prev.find((p) => p.id === newPhoto.id)) {
@@ -1116,7 +1208,30 @@ export default function FeedScreen() {
                         return [newPhoto, ...prev];
                     });
 
-                    setNewPhotoIds(prevNew => new Set(prevNew).add(newPhoto.id));
+                    // If the user had liked the optimistic photo before upload finished,
+                    // migrate that like to the now-confirmed real photo ID and persist to DB.
+                    if (hadPendingLike && optimisticItem) {
+                        pendingOptimisticLikesRef.current.delete(optimisticItem.id);
+                        setLikedPhotoIds(prev => {
+                            const updated = new Set(prev);
+                            updated.delete(optimisticItem.id);
+                            updated.add(newPhoto.id);
+                            return updated;
+                        });
+                        const userEmail = currentUserEmailRef.current || 'anonymous';
+                        supabase.rpc('toggle_like', {
+                            photo_id_input: newPhoto.id,
+                            p_user_email: userEmail,
+                        }).then(({ data }) => {
+                            if (data) {
+                                setPhotos(prev => prev.map(p =>
+                                    p.id === newPhoto.id ? { ...p, likes: data.likes } : p
+                                ));
+                            }
+                        });
+                    }
+
+                    setNewPhotoIds(prevNew => { const s = new Set(prevNew); s.add(newPhoto.id); return s; });
 
                     if (incrementCount) {
                         setTotalCount((prev) => prev + 1);
@@ -1127,7 +1242,13 @@ export default function FeedScreen() {
             .on(
                 'postgres_changes',
                 { event: 'DELETE', schema: 'public', table: 'photos' },
-                () => setTotalCount((prev) => Math.max(0, prev - 1))
+                (payload) => {
+                    const deletedId = payload.old?.id;
+                    if (deletedId) {
+                        setPhotos((prev) => prev.filter((p) => p.id !== deletedId));
+                    }
+                    setTotalCount((prev) => Math.max(0, prev - 1));
+                }
             )
             .on(
                 'postgres_changes',
@@ -1159,8 +1280,13 @@ export default function FeedScreen() {
             const userInfo = await AsyncStorage.getItem('wedding_user_info');
             if (userInfo) {
                 const user = JSON.parse(userInfo);
-                setCurrentUser(user.full_name || 'anonymous');
+                const userName = user.full_name || 'anonymous';
+                setCurrentUser(userName);
                 setCurrentUserEmail(user.email || null);
+                currentUserEmailRef.current = user.email || null;
+                // Load user's liked photos from join table
+                const likes = await fetchUserLikes(user.email || userName);
+                setLikedPhotoIds(likes);
             } else {
                 setCurrentUser('anonymous');
                 setCurrentUserEmail(null);
@@ -1234,6 +1360,64 @@ export default function FeedScreen() {
         return new Set<string>();
     };
 
+    const loadBookmarks = async () => {
+        try {
+            const data = await AsyncStorage.getItem('wedding_bookmarked_photos');
+            if (data) {
+                setBookmarkedIds(new Set<string>(JSON.parse(data)));
+            }
+        } catch (error) {
+            if (__DEV__) console.error('Error loading bookmarks:', error);
+        }
+    };
+
+    const toggleBookmark = async (photoId: string) => {
+        const updated = new Set(bookmarkedIds);
+        if (updated.has(photoId)) {
+            updated.delete(photoId);
+        } else {
+            updated.add(photoId);
+        }
+        setBookmarkedIds(updated);
+        await AsyncStorage.setItem('wedding_bookmarked_photos', JSON.stringify(Array.from(updated)));
+    };
+
+    const handleDownloadAll = async () => {
+        if (isDownloadingAll || photos.length === 0) return;
+
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permission requise', "L'accès à la galerie est nécessaire pour sauvegarder les photos.");
+            return;
+        }
+
+        setIsDownloadingAll(true);
+        setDownloadProgress({ current: 0, total: photos.length });
+        let saved = 0;
+        let failed = 0;
+
+        for (const photo of photos) {
+            try {
+                const ext = photo.media_type === 'video' ? 'mp4' : 'jpg';
+                const fileUri = `${(FileSystem as any).cacheDirectory}download_${photo.id}.${ext}`;
+                const fileInfo = await FileSystem.getInfoAsync(fileUri);
+                const uri = fileInfo.exists ? fileUri : (await FileSystem.downloadAsync(photo.image_url, fileUri)).uri;
+                await MediaLibrary.saveToLibraryAsync(uri);
+                saved++;
+            } catch {
+                failed++;
+            }
+            setDownloadProgress({ current: saved + failed, total: photos.length });
+        }
+
+        setIsDownloadingAll(false);
+        if (failed === 0) {
+            Alert.alert('Terminé', `${saved} ${saved > 1 ? 'photos sauvegardées' : 'photo sauvegardée'} dans la galerie.`);
+        } else {
+            Alert.alert('Terminé', `${saved} sauvegardée${saved > 1 ? 's' : ''}, ${failed} échouée${failed > 1 ? 's' : ''}.`);
+        }
+    };
+
     const markPhotoAsSeen = async (photoId: string) => {
         try {
             const updatedSeen = new Set(seenPhotoIds);
@@ -1252,15 +1436,19 @@ export default function FeedScreen() {
 
     const initialLoad = async (seenIds?: Set<string>) => {
         setIsLoading(true);
+        setCurrentPage(0);
+        setHasMorePhotos(true);
+
         const [countRes, dataRes] = await Promise.all([
             supabase.from('photos').select('*', { count: 'exact', head: true }),
-            supabase.from('photos').select('*').order('created_at', { ascending: false }).limit(50),
+            supabase.from('photos').select('*').order('created_at', { ascending: false }).range(0, PAGE_SIZE - 1),
         ]);
 
         if (countRes.count !== null) setTotalCount(countRes.count);
         if (dataRes.data) {
             const loadedPhotos = dataRes.data as Photo[];
             setPhotos(loadedPhotos);
+            setHasMorePhotos(loadedPhotos.length === PAGE_SIZE);
 
             const idsToCheck = seenIds || seenPhotoIds;
             const newIds = new Set<string>();
@@ -1276,6 +1464,35 @@ export default function FeedScreen() {
         setRefreshing(false);
     };
 
+    const loadMorePhotos = async () => {
+        if (isLoadingMore || !hasMorePhotos) return;
+        setIsLoadingMore(true);
+
+        const nextPage = currentPage + 1;
+        const from = nextPage * PAGE_SIZE;
+        const to = from + PAGE_SIZE - 1;
+
+        const { data } = await supabase
+            .from('photos')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .range(from, to);
+
+        if (data && data.length > 0) {
+            setPhotos(prev => {
+                const existingIds = new Set(prev.map(p => p.id));
+                const newPhotos = data.filter((p: Photo) => !existingIds.has(p.id));
+                return [...prev, ...newPhotos];
+            });
+            setCurrentPage(nextPage);
+            setHasMorePhotos(data.length === PAGE_SIZE);
+        } else {
+            setHasMorePhotos(false);
+        }
+
+        setIsLoadingMore(false);
+    };
+
     const onRefresh = () => {
         setRefreshing(true);
         initialLoad();
@@ -1283,26 +1500,106 @@ export default function FeedScreen() {
 
     const toggleLike = async (photo: Photo) => {
         try {
-            const userEmail = currentUser || 'anonymous';
-            const likedBy = photo.liked_by || [];
-            const hasLiked = likedBy.includes(userEmail);
-            const newLikedBy = hasLiked ? likedBy.filter((e) => e !== userEmail) : [...likedBy, userEmail];
+            const userEmail = currentUserEmailRef.current || currentUserEmail || currentUser || 'anonymous';
+            const alreadyLiked = likedPhotoIds.has(photo.id);
+            const isOptimistic = String(photo.id).startsWith('temp-');
 
-            const updatedPhoto = { ...photo, likes: newLikedBy.length, liked_by: newLikedBy };
-            setPhotos((prev) => prev.map((p) => (p.id === photo.id ? updatedPhoto : p)));
+            // Optimistic update: toggle local Set + adjust count (always, for instant UI)
+            setLikedPhotoIds(prev => {
+                const updated = new Set(prev);
+                if (alreadyLiked) updated.delete(photo.id);
+                else updated.add(photo.id);
+                return updated;
+            });
+            setPhotos(prev => prev.map(p =>
+                p.id === photo.id
+                    ? { ...p, likes: p.likes + (alreadyLiked ? -1 : 1) }
+                    : p
+            ));
 
-            await supabase
-                .from('photos')
-                .update({ likes: newLikedBy.length, liked_by: newLikedBy })
-                .eq('id', photo.id);
+            // Skip server call for photos still uploading, but track intent so the like is
+            // persisted once the real photo arrives via the INSERT realtime handler.
+            if (isOptimistic) {
+                if (alreadyLiked) {
+                    pendingOptimisticLikesRef.current.delete(photo.id);
+                } else {
+                    pendingOptimisticLikesRef.current.add(photo.id);
+                }
+                return;
+            }
+
+            // Atomic server-side toggle via join table
+            const { data, error } = await supabase.rpc('toggle_like', {
+                photo_id_input: photo.id,
+                p_user_email: userEmail,
+            });
+
+            if (error) throw error;
+
+            // Sync count with server truth
+            if (data) {
+                setPhotos(prev => prev.map(p =>
+                    p.id === photo.id ? { ...p, likes: data.likes } : p
+                ));
+            }
+
+            // Notification push au créateur (seulement sur un like)
+            if (data?.action === 'liked') {
+                sendLikeNotification(photo.created_by, currentUser);
+            }
         } catch (error) {
+            // Rollback: re-toggle the Set + restore count
+            setLikedPhotoIds(prev => {
+                const updated = new Set(prev);
+                if (updated.has(photo.id)) updated.delete(photo.id);
+                else updated.add(photo.id);
+                return updated;
+            });
+            setPhotos(prev => prev.map(p =>
+                p.id === photo.id ? { ...p, likes: photo.likes } : p
+            ));
             if (__DEV__) console.error(error);
         }
     };
 
     const hasUserLiked = (photo: Photo) => {
-        const userEmail = currentUser || 'anonymous';
-        return (photo.liked_by || []).includes(userEmail);
+        return likedPhotoIds.has(photo.id);
+    };
+
+    const handleDeletePhoto = (photo: Photo) => {
+        Alert.alert(
+            'Supprimer',
+            'Supprimer cette photo ? Cette action est irréversible.',
+            [
+                { text: 'Annuler', style: 'cancel' },
+                {
+                    text: 'Supprimer',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            // Retirer immédiatement de la liste (optimistic)
+                            setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+                            setTotalCount((prev) => Math.max(0, prev - 1));
+
+                            await deletePhoto(
+                                photo.id,
+                                photo.image_url,
+                                currentUser || '',
+                                photo.created_by || ''
+                            );
+
+                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        } catch (error) {
+                            // Remettre la photo en cas d'erreur
+                            setPhotos((prev) => [photo, ...prev]);
+                            setTotalCount((prev) => prev + 1);
+                            Alert.alert('Erreur', 'Impossible de supprimer cette photo.');
+                            if (__DEV__) console.error('[Delete] Error:', error);
+                        }
+                    },
+                },
+            ]
+        );
     };
 
     const renderItem = ({ item, index }: { item: Photo; index: number }) => (
@@ -1311,9 +1608,14 @@ export default function FeedScreen() {
             currentUser={currentUser}
             onLike={() => toggleLike(item)}
             onPress={() => setSelectedPhotoIndex(index)}
-            isNew={newPhotoIds.has(item.id)}
-            onAnimationComplete={() => markPhotoAsSeen(item.id)}
+            onDelete={() => handleDeletePhoto(item)}
+            isNew={isFocused && newPhotoIds.has(item.id)}
+            onAnimationComplete={() => {}}
             index={index}
+            isBookmarked={bookmarkedIds.has(item.id)}
+            onBookmark={() => toggleBookmark(item.id)}
+            isVideoPlaying={isFocused && visibleVideoIds.has(item.id)}
+            hasLiked={likedPhotoIds.has(item.id)}
         />
     );
 
@@ -1401,35 +1703,48 @@ export default function FeedScreen() {
                     keyExtractor={(item) => item.id}
                     renderItem={viewMode === 'grid' ? renderGridItem : renderItem}
                     numColumns={viewMode === 'grid' ? 3 : 1}
-                    extraData={[photos.length, viewMode]}
+                    extraData={[photos.length, viewMode, visibleVideoIds, isFocused, likedPhotoIds]}
                     contentContainerStyle={[styles.scrollContent, { paddingBottom: 80 + insets.bottom }]}
                     ListHeaderComponent={
                         <View>
                             <PremiumHeroHeader insetTop={insets.top} totalPhotos={totalCount} />
-                            {/* A4: View Mode Toggle */}
+                            {/* View Mode Toggle + Download All */}
                             <View style={styles.viewToggleRow}>
-                                <TouchableOpacity
-                                    style={[styles.viewToggleBtn, viewMode === 'list' && styles.viewToggleBtnActive]}
-                                    onPress={() => { setViewMode('list'); Haptics.selectionAsync(); }}
-                                    activeOpacity={0.7}
-                                >
-                                    <View style={{ gap: 2.5 }}>
-                                        {[0, 1, 2].map(i => (
-                                            <View key={i} style={{ width: 14, height: 2, backgroundColor: viewMode === 'list' ? '#DB2777' : '#9CA3AF', borderRadius: 1 }} />
-                                        ))}
-                                    </View>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[styles.viewToggleBtn, viewMode === 'grid' && styles.viewToggleBtnActive]}
-                                    onPress={() => { setViewMode('grid'); Haptics.selectionAsync(); }}
-                                    activeOpacity={0.7}
-                                >
-                                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, width: 14 }}>
-                                        {[0, 1, 2, 3].map(i => (
-                                            <View key={i} style={{ width: 6, height: 6, backgroundColor: viewMode === 'grid' ? '#DB2777' : '#9CA3AF', borderRadius: 1 }} />
-                                        ))}
-                                    </View>
-                                </TouchableOpacity>
+                                <View style={{ flexDirection: 'row', gap: 6 }}>
+                                    <TouchableOpacity
+                                        style={[styles.viewToggleBtn, viewMode === 'list' && styles.viewToggleBtnActive]}
+                                        onPress={() => { setViewMode('list'); Haptics.selectionAsync(); }}
+                                        activeOpacity={0.7}
+                                    >
+                                        <View style={{ gap: 2.5 }}>
+                                            {[0, 1, 2].map(i => (
+                                                <View key={i} style={{ width: 14, height: 2, backgroundColor: viewMode === 'list' ? '#DB2777' : '#9CA3AF', borderRadius: 1 }} />
+                                            ))}
+                                        </View>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.viewToggleBtn, viewMode === 'grid' && styles.viewToggleBtnActive]}
+                                        onPress={() => { setViewMode('grid'); Haptics.selectionAsync(); }}
+                                        activeOpacity={0.7}
+                                    >
+                                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, width: 14 }}>
+                                            {[0, 1, 2, 3].map(i => (
+                                                <View key={i} style={{ width: 6, height: 6, backgroundColor: viewMode === 'grid' ? '#DB2777' : '#9CA3AF', borderRadius: 1 }} />
+                                            ))}
+                                        </View>
+                                    </TouchableOpacity>
+                                </View>
+                                {photos.length > 0 && (
+                                    <TouchableOpacity
+                                        style={styles.downloadAllBtn}
+                                        onPress={handleDownloadAll}
+                                        activeOpacity={0.7}
+                                        disabled={isDownloadingAll}
+                                    >
+                                        <Download size={14} color="#9D174D" />
+                                        <Text style={styles.downloadAllText}>Tout sauvegarder</Text>
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         </View>
                     }
@@ -1456,6 +1771,13 @@ export default function FeedScreen() {
                             </Text>
                         </View>
                     }
+                    onEndReached={loadMorePhotos}
+                    onEndReachedThreshold={0.5}
+                    ListFooterComponent={isLoadingMore ? (
+                        <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                            <ActivityIndicator size="small" color="#EC4899" />
+                        </View>
+                    ) : null}
                     ItemSeparatorComponent={viewMode === 'grid' ? undefined : () => <View style={{ height: 1, backgroundColor: '#F3E8FF' }} />}
                     onScroll={Animated.event(
                         [{ nativeEvent: { contentOffset: { y: scrollY } } }],
@@ -1466,6 +1788,8 @@ export default function FeedScreen() {
                     initialNumToRender={viewMode === 'grid' ? 15 : 5}
                     maxToRenderPerBatch={viewMode === 'grid' ? 15 : 5}
                     windowSize={viewMode === 'grid' ? 7 : 5}
+                    viewabilityConfig={viewMode === 'list' ? viewabilityConfig : undefined}
+                    onViewableItemsChanged={viewMode === 'list' ? onViewableItemsChanged : undefined}
                 />
             )}
 
@@ -1485,6 +1809,25 @@ export default function FeedScreen() {
                     canSwipeLeft={selectedPhotoIndex > 0}
                     canSwipeRight={selectedPhotoIndex < photos.length - 1}
                 />
+            )}
+
+            {/* Download Progress Overlay */}
+            {isDownloadingAll && (
+                <View style={styles.downloadOverlay}>
+                    <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+                    <View style={styles.downloadOverlayContent}>
+                        <ActivityIndicator size="large" color="#EC4899" />
+                        <Text style={styles.downloadOverlayText}>
+                            {downloadProgress.current}/{downloadProgress.total} photos
+                        </Text>
+                        <View style={styles.downloadProgressBar}>
+                            <View style={[
+                                styles.downloadProgressFill,
+                                { width: `${downloadProgress.total > 0 ? (downloadProgress.current / downloadProgress.total) * 100 : 0}%` }
+                            ]} />
+                        </View>
+                    </View>
+                </View>
             )}
 
             {/* STORE_COMPLIANCE: Settings Button */}
@@ -1723,6 +2066,12 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 12,
+        flex: 1,
+    },
+    deleteButton: {
+        padding: 6,
+        borderRadius: 20,
+        backgroundColor: 'rgba(0, 0, 0, 0.05)',
     },
     avatar: {
         width: scale(42),
@@ -2054,11 +2403,11 @@ const styles = StyleSheet.create({
     // A4: View Mode Toggle styles
     viewToggleRow: {
         flexDirection: 'row',
-        justifyContent: 'center',
+        justifyContent: 'space-between',
         alignItems: 'center',
-        gap: 8,
         marginTop: 12,
         marginBottom: 4,
+        paddingHorizontal: 16,
     },
     viewToggleBtn: {
         width: 38,
@@ -2108,5 +2457,53 @@ const styles = StyleSheet.create({
         backgroundColor: '#F43F5E',
         borderWidth: 1,
         borderColor: 'white',
+    },
+
+    // Download All
+    downloadAllBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 12,
+        backgroundColor: 'rgba(249, 168, 212, 0.2)',
+        borderWidth: 1,
+        borderColor: 'rgba(219, 39, 119, 0.15)',
+    },
+    downloadAllText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#9D174D',
+    },
+    downloadOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        zIndex: 100,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    downloadOverlayContent: {
+        alignItems: 'center',
+        gap: 16,
+        padding: 32,
+        borderRadius: 24,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    },
+    downloadOverlayText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    downloadProgressBar: {
+        width: 200,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        overflow: 'hidden',
+    },
+    downloadProgressFill: {
+        height: '100%',
+        borderRadius: 2,
+        backgroundColor: '#EC4899',
     },
 });

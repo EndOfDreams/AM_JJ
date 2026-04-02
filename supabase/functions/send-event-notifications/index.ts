@@ -22,25 +22,42 @@ function parseEventTime(timeStr: string): { hours: number; minutes: number } | n
 }
 
 /**
- * Vérifie si un événement nécessite une notification MAINTENANT (15 min avant)
+ * Récupère l'heure actuelle en France (Europe/Paris)
+ * Le serveur Deno tourne en UTC, les événements sont en heure française
  */
-function shouldNotifyForEvent(event: PlanningEvent, now: Date): boolean {
+function getNowInParis(): { hours: number; minutes: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Paris',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  }).formatToParts(new Date());
+
+  return {
+    hours: parseInt(parts.find(p => p.type === 'hour')!.value, 10),
+    minutes: parseInt(parts.find(p => p.type === 'minute')!.value, 10),
+  };
+}
+
+/**
+ * Vérifie si un événement nécessite une notification MAINTENANT (15 min avant)
+ * Compare en minutes depuis minuit pour éviter les problèmes de timezone
+ */
+function shouldNotifyForEvent(event: PlanningEvent, nowParis: { hours: number; minutes: number }): boolean {
   const eventTime = parseEventTime(event.time);
   if (!eventTime) return false;
 
-  // Créer la date de l'événement pour aujourd'hui
-  const eventDate = new Date(now);
-  eventDate.setHours(eventTime.hours, eventTime.minutes, 0, 0);
+  const eventMinutes = eventTime.hours * 60 + eventTime.minutes;
+  const nowMinutes = nowParis.hours * 60 + nowParis.minutes;
 
   // Si l'événement est déjà passé, ignorer
-  if (eventDate < now) return false;
+  if (eventMinutes <= nowMinutes) return false;
 
-  // Heure de notification = 15 minutes avant
-  const notifTime = new Date(eventDate.getTime() - 15 * 60 * 1000);
+  // Notification = 15 minutes avant
+  const notifMinutes = eventMinutes - 15;
 
-  // Vérifier si on est dans une fenêtre de 1 minute
-  const timeDiff = Math.abs(now.getTime() - notifTime.getTime());
-  return timeDiff < 60 * 1000;
+  // Vérifier si on est dans une fenêtre de ±1 minute
+  return Math.abs(nowMinutes - notifMinutes) <= 1;
 }
 
 /**
@@ -72,7 +89,8 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    const now = new Date();
+    const nowParis = getNowInParis();
+    console.log('[Notif] Current time in Paris:', `${nowParis.hours}:${String(nowParis.minutes).padStart(2, '0')}`);
 
     // 1. Récupérer tous les événements
     const { data: events, error: eventsError } = await supabase
@@ -88,7 +106,7 @@ Deno.serve(async (req) => {
     }
 
     // 2. Filtrer les événements nécessitant une notification
-    const eventsToNotify = events.filter(e => shouldNotifyForEvent(e, now));
+    const eventsToNotify = events.filter(e => shouldNotifyForEvent(e, nowParis));
 
     if (!eventsToNotify.length) {
       console.log('[Notif] No events to notify');
@@ -97,7 +115,24 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[Notif] Notifying for: ${eventsToNotify.map(e => e.title).join(', ')}`);
+    // 2b. Déduplication : vérifier quels événements ont déjà été notifiés aujourd'hui
+    const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const { data: alreadySent } = await supabase
+      .from('notifications_log')
+      .select('event_id')
+      .gte('sent_at', `${today}T00:00:00.000Z`);
+
+    const alreadySentIds = new Set((alreadySent || []).map((r: any) => r.event_id));
+    const eventsToNotifyDeduped = eventsToNotify.filter(e => !alreadySentIds.has(e.id));
+
+    if (!eventsToNotifyDeduped.length) {
+      console.log('[Notif] All events already notified today, skipping');
+      return new Response(JSON.stringify({ message: 'Already notified today' }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    console.log(`[Notif] After dedup: ${eventsToNotifyDeduped.map(e => e.title).join(', ')}`);
 
     // 3. Récupérer les tokens actifs (depuis la table guests)
     const { data: guests, error: tokensError } = await supabase
@@ -115,14 +150,12 @@ Deno.serve(async (req) => {
 
     // 4. Construire les messages
     const messages = [];
-    for (const event of eventsToNotify) {
+    for (const event of eventsToNotifyDeduped) {
       for (const guest of guests) {
         messages.push({
           to: guest.push_token,
           title: `💒 ${event.title}`,
-          body: event.description
-            ? `Dans 15 minutes — ${event.description}`
-            : `Dans 15 minutes — Préparez-vous !`,
+          body: event.description || undefined,
           data: {
             screen: 'planning',
             eventId: String(event.id),
@@ -153,7 +186,7 @@ Deno.serve(async (req) => {
     }
 
     // 7. Logger les envois (optionnel)
-    for (const event of eventsToNotify) {
+    for (const event of eventsToNotifyDeduped) {
       await supabase.from('notifications_log').insert({
         event_id: event.id,
         event_title: event.title,
@@ -167,7 +200,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        eventsNotified: eventsToNotify.map(e => e.title),
+        eventsNotified: eventsToNotifyDeduped.map(e => e.title),
         messagesSent: messages.length,
         invalidTokens: invalidTokens.length,
       }),

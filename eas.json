@@ -1,40 +1,41 @@
 {
-    "cli": {
-        "version": ">= 5.0.0"
+  "cli": {
+    "version": ">= 5.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
     },
-    "build": {
-        "development": {
-            "developmentClient": true,
-            "distribution": "internal"
-        },
-        "preview": {
-            "distribution": "internal",
-            "ios": {
-                "simulator": true
-            }
-        },
-        "production": {
-            "ios": {
-                "buildConfiguration": "Release",
-                "autoIncrement": true
-            },
-            "android": {
-                "buildType": "app-bundle",
-                "autoIncrement": "versionCode"
-            }
-        }
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      }
     },
-    "submit": {
-        "production": {
-            "ios": {
-                "appleId": "VOTRE_EMAIL@apple.com",
-                "ascAppId": "VOTRE_APP_ID",
-                "appleTeamId": "VOTRE_TEAM_ID"
-            },
-            "android": {
-                "serviceAccountKeyPath": "./google-service-account.json",
-                "track": "production"
-            }
-        }
+    "production": {
+      "ios": {
+        "buildConfiguration": "Release",
+        "autoIncrement": true
+      },
+      "android": {
+        "buildType": "app-bundle",
+        "autoIncrement": "versionCode"
+      }
     }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "camille.peres25@gmail.com",
+        "ascAppId": "6761426187",
+        "appleTeamId": "S4U683QA76"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./google-service-account.json",
+        "track": "production"
+      }
+    }
+  }
 }

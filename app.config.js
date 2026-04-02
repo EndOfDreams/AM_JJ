@@ -1,12 +1,12 @@
 module.exports = {
     expo: {
         name: "WedSnap",
-        slug: "wedsnap",
+        slug: "AM_jj",
         owner: "endofdreams32",
-        version: "1.0.0",
+        version: "1.0.4",
         orientation: "portrait",
         icon: "./assets/images/icon.png",
-        scheme: "wedsnap",
+        scheme: "amjj",
         userInterfaceStyle: "light", // STORE_COMPLIANCE: Explicitly set to light until dark mode is fully implemented
         newArchEnabled: true,
         ios: {

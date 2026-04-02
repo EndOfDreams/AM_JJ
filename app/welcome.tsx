@@ -2,9 +2,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BlurView } from "expo-blur";
 import * as Haptics from 'expo-haptics';
-import { requestNotificationPermission, registerForPushNotifications } from '@/lib/notifications';
+import { registerForPushNotifications } from '@/lib/notifications';
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
+import { Video, ResizeMode } from "expo-av";
+import { Asset } from "expo-asset";
 import { CheckCircle2, Heart, Lock, Sparkles, User } from "lucide-react-native";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -134,9 +136,9 @@ const FloatingParticle: React.FC<{ delay: number; index: number }> = ({ delay, i
       ]}
     >
       {index % 2 === 0 ? (
-        <Heart size={16} color="#FDA4AF" fill="#FDA4AF" />
+        <Heart size={16} color="#ffbed0" fill="#ffbed0" />
       ) : (
-        <Sparkles size={14} color="#DDD6FE" />
+        <Sparkles size={14} color="#abc4e7" />
       )}
     </Animated.View>
   );
@@ -232,7 +234,7 @@ const AnimatedBlob: React.FC<{ index: number }> = ({ index }) => {
   return (
     <Animated.View
       style={[
-        index === 0 ? styles.blob1 : styles.blob2,
+        index === 0 ? styles.blob1 : styles.blob1,
         {
           transform: [
             { translateX },
@@ -251,9 +253,10 @@ export default function Welcome() {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [transitionPhase, setTransitionPhase] = useState<'none' | 'video'>('none');
+  const whiteOverlayAnim = useRef(new Animated.Value(0)).current;
+  const videoRef = useRef<any>(null);
 
   // Advanced animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -262,8 +265,7 @@ export default function Welcome() {
   const logoRotate = useRef(new Animated.Value(0)).current;
   const shimmerX = useRef(new Animated.Value(-width)).current;
   const glowPulse = useRef(new Animated.Value(1)).current;
-  const successScale = useRef(new Animated.Value(0)).current;
-  const successOpacity = useRef(new Animated.Value(0)).current;
+
   const cardScale = useRef(new Animated.Value(1)).current;
 
   // Border gradient animation
@@ -369,6 +371,18 @@ export default function Welcome() {
     ).start();
   }, []);
 
+  // Preload transition video on mount for instant playback
+  useEffect(() => {
+    Asset.fromModule(require('../assets/Connexion_paradis.mp4')).downloadAsync().catch(() => {});
+  }, []);
+
+  // Déclenche la lecture dès que la phase passe à 'video'
+  useEffect(() => {
+    if (transitionPhase === 'video' && videoRef.current) {
+      videoRef.current.playAsync().catch(() => {});
+    }
+  }, [transitionPhase]);
+
   const logoRotateInterpolate = logoRotate.interpolate({
     inputRange: [0, 1],
     outputRange: ['-2deg', '2deg'],
@@ -380,81 +394,54 @@ export default function Welcome() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
+  const fadeToWhiteAndNavigate = () => {
+    Animated.timing(whiteOverlayAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+    }).start(() => router.replace('/'));
+  };
+
+  const handleVideoEnd = () => {
+    fadeToWhiteAndNavigate();
+  };
+
   const handleSubmit = async () => {
     setErrorMessage("");
 
     if (!name.trim() || !password.trim()) {
       setErrorMessage("Veuillez remplir tous les champs");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-
-      // Shake animation on error
       Animated.sequence([
         Animated.timing(cardScale, { toValue: 0.98, duration: 50, useNativeDriver: true }),
         Animated.timing(cardScale, { toValue: 1.02, duration: 50, useNativeDriver: true }),
         Animated.timing(cardScale, { toValue: 0.98, duration: 50, useNativeDriver: true }),
         Animated.timing(cardScale, { toValue: 1, duration: 50, useNativeDriver: true }),
       ]).start();
-
       return;
     }
 
-    setIsLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
       const user = await signIn(name, password);
       await AsyncStorage.setItem("wedding_logged_in", "true");
       await AsyncStorage.setItem("wedding_user_info", JSON.stringify(user));
-
-      // Request notification permission (non-blocking)
-      requestNotificationPermission();
-
-      // Register push token for remote notifications
       registerForPushNotifications(user.user_id).catch(err => {
         if (__DEV__) console.warn('[Welcome] Failed to register push token:', err);
       });
-
-      // Success animation
-      setIsSuccess(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      Animated.parallel([
-        Animated.spring(successScale, {
-          toValue: 1,
-          tension: 50,
-          friction: 7,
-          useNativeDriver: true,
-        }),
-        Animated.timing(successOpacity, {
-          toValue: 1,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(fadeAnim, {
-            toValue: 0,
-            duration: 600,
-            useNativeDriver: true,
-          }),
-          Animated.timing(cardScale, {
-            toValue: 0.9,
-            duration: 600,
-            useNativeDriver: true,
-          }),
-        ]).start(() => {
-          router.replace("/");
-        });
-      }, 1800);
+      // Auth réussie → fade + vidéo (déjà bufferisée, démarre instantanément)
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(() => setTransitionPhase('video'));
 
     } catch (err: any) {
-      setErrorMessage(err.message || "Erreur de connexion");
-      setIsLoading(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-
-      // Error shake
+      setErrorMessage(err.message || "Erreur de connexion");
       Animated.sequence([
         Animated.timing(cardScale, { toValue: 0.97, duration: 60, useNativeDriver: true }),
         Animated.timing(cardScale, { toValue: 1.03, duration: 60, useNativeDriver: true }),
@@ -468,15 +455,25 @@ export default function Welcome() {
     <View style={styles.container}>
       {/* Gradient Background */}
       <LinearGradient
-        colors={['#FFF1F2', '#FCE7F3', '#F3E8FF', '#EDE9FE']}
+        colors={['transparent', '#abc4e7']}
         start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+        end={{ x: 0, y: 1 }}
         style={StyleSheet.absoluteFillObject}
       />
 
+      {/* Top Image Blob */}
+      <Image
+        source={require('@/assets/dégradé_rose.png')}
+        style={styles.blobTop}
+        resizeMode="cover"
+      />
+
       {/* Animated blobs */}
-      <AnimatedBlob index={0} />
-      <AnimatedBlob index={1} />
+      <Image
+        source={require('@/assets/Dedrade_bleu.png')}
+        style={styles.blob1}
+        resizeMode="cover"
+      />
 
       {/* Floating particles */}
       <View style={styles.particlesContainer}>
@@ -485,37 +482,46 @@ export default function Welcome() {
         ))}
       </View>
 
-      {/* Success overlay */}
-      {isSuccess && (
+      {/* Video toujours monté (1×1px invisible) pour buffering — plein écran quand actif */}
+      <View
+        pointerEvents="none"
+        style={transitionPhase === 'video' ? styles.transitionVideo : styles.videoPreload}
+      >
+        <Video
+          ref={videoRef}
+          source={require('../assets/Connexion_paradis.mp4')}
+          style={StyleSheet.absoluteFillObject}
+          resizeMode={ResizeMode.COVER}
+          shouldPlay={false}
+          isLooping={false}
+          isMuted={false}
+          onPlaybackStatusUpdate={(status) => {
+            if (status.isLoaded && status.didJustFinish) handleVideoEnd();
+          }}
+        />
+      </View>
+
+      {/* Animated white bloom overlay — fades in over 600ms après la fin de la vidéo */}
+      {transitionPhase === 'video' && (
         <Animated.View
+          pointerEvents="none"
           style={[
-            styles.successOverlay,
-            {
-              opacity: successOpacity,
-            },
+            StyleSheet.absoluteFillObject,
+            { backgroundColor: '#ffffff', opacity: whiteOverlayAnim, zIndex: 300 },
           ]}
-        >
-          <Animated.View
-            style={{
-              transform: [{ scale: successScale }],
-              alignItems: 'center',
-            }}
-          >
-            <Text style={styles.successEmoji}>💍</Text>
-            <Text style={styles.successText}>Bienvenue !</Text>
-            <Text style={styles.successSubtext}>Connexion réussie</Text>
-          </Animated.View>
-        </Animated.View>
+        />
       )}
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : "position"}
+        keyboardVerticalOffset={10}
         style={styles.keyboardView}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          scrollEnabled={true}
         >
           <Animated.View
             style={[
@@ -537,36 +543,11 @@ export default function Welcome() {
               ]}
             >
               <View style={styles.logoWrapper}>
-                {/* Multi-layer premium glow */}
-                <Animated.View
-                  style={[
-                    styles.logoGlowLayer1,
-                    { opacity: Animated.multiply(glowPulse, 0.25) },
-                  ]}
+                <Image
+                  source={require('../assets/AM_JJ.png')}
+                  style={styles.logo}
+                  resizeMode="contain"
                 />
-                <Animated.View
-                  style={[
-                    styles.logoGlowLayer2,
-                    { opacity: Animated.multiply(glowPulse, 0.35) },
-                  ]}
-                />
-                <Animated.View
-                  style={[
-                    styles.logoGlowLayer3,
-                    { opacity: Animated.multiply(glowPulse, 0.2) },
-                  ]}
-                />
-
-                {/* Logo card with depth */}
-                <View style={styles.logoCard}>
-                  <View style={styles.logoInnerCard}>
-                    <Image
-                      source={require('../assets/AM_JJ.png')}
-                      style={styles.logo}
-                      resizeMode="contain"
-                    />
-                  </View>
-                </View>
               </View>
             </Animated.View>
 
@@ -577,53 +558,27 @@ export default function Welcome() {
                 { transform: [{ translateY: slideAnim }] },
               ]}
             >
-              {/* Animated glow layers */}
-              <Animated.View
-                style={[
-                  styles.cardGlowOuter,
-                  { opacity: Animated.multiply(glowPulse, 0.22) }
-                ]}
-              />
-              <Animated.View
-                style={[
-                  styles.cardGlowMid,
-                  { opacity: Animated.multiply(glowPulse, 0.28) }
-                ]}
-              />
-              <Animated.View
-                style={[
-                  styles.cardGlowInner,
-                  { opacity: Animated.multiply(glowPulse, 0.35) }
-                ]}
-              />
-
               {/* Main card */}
               <View style={styles.card}>
-                <BlurView intensity={95} tint="light" style={styles.cardBlur}>
-                  {/* Animated top accent */}
-                  <LinearGradient
-                    colors={['#F9A8D4', '#F472B6', '#E879F9', '#C084FC']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.topAccent}
-                  />
+                <BlurView intensity={0} tint="light" style={styles.cardBlur}>
 
                   {/* Card header */}
                   <View style={styles.cardHeader}>
+                    <Text style={styles.appName}>WEDSNAP</Text>
                     <Text style={styles.cardTitle}>Notre Mariage</Text>
 
                     <View style={styles.headerDivider}>
                       <LinearGradient
-                        colors={['rgba(244, 114, 182, 0)', '#F472B6', 'rgba(244, 114, 182, 0)']}
+                        colors={['rgba(255, 221, 253, 0)', '#ffbed0', 'rgba(255, 221, 253, 0)']}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                         style={styles.headerLineGradient}
                       />
                       <View style={styles.headerHeartWrapper}>
-                        <Heart size={11} color="#F472B6" fill="#F472B6" />
+                        <Heart size={11} color="#ffbed0" fill="#ffbed0" />
                       </View>
                       <LinearGradient
-                        colors={['rgba(244, 114, 182, 0)', '#F472B6', 'rgba(244, 114, 182, 0)']}
+                        colors={['rgba(255, 221, 253, 0)', '#ffbed0', 'rgba(255, 221, 253, 0)']}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                         style={styles.headerLineGradient}
@@ -649,7 +604,7 @@ export default function Welcome() {
                           <LinearGradient
                             colors={
                               focusedField === 'name'
-                                ? ['#FFF1F2', '#FFFFFF']
+                                ? ['#ffbed0', '#FFFFFF']
                                 : ['#FFFFFF', '#FFFFFF']
                             }
                             style={styles.inputGradientBg}
@@ -657,7 +612,7 @@ export default function Welcome() {
                           <View style={styles.inputIconWrapper}>
                             <User
                               size={17}
-                              color={focusedField === 'name' ? '#F472B6' : '#9CA3AF'}
+                              color={focusedField === 'name' ? '#ffbed0' : '#9CA3AF'}
                               strokeWidth={2}
                             />
                           </View>
@@ -689,7 +644,7 @@ export default function Welcome() {
                           <LinearGradient
                             colors={
                               focusedField === 'password'
-                                ? ['#FAF5FF', '#FFFFFF']
+                                ? ['#abc4e7', '#FFFFFF']
                                 : ['#FFFFFF', '#FFFFFF']
                             }
                             style={styles.inputGradientBg}
@@ -697,7 +652,7 @@ export default function Welcome() {
                           <View style={styles.inputIconWrapper}>
                             <Lock
                               size={17}
-                              color={focusedField === 'password' ? '#C084FC' : '#9CA3AF'}
+                              color={focusedField === 'password' ? '#abc4e7' : '#9CA3AF'}
                               strokeWidth={2}
                             />
                           </View>
@@ -719,7 +674,7 @@ export default function Welcome() {
                     {errorMessage ? (
                       <Animated.View style={styles.errorContainer}>
                         <LinearGradient
-                          colors={['#FEE2E2', '#FECACA']}
+                          colors={['#ffbed0', '#ffbed0']}
                           style={styles.errorGradient}
                         >
                           <Text style={styles.errorText}>{errorMessage}</Text>
@@ -731,12 +686,12 @@ export default function Welcome() {
                     <TouchableOpacity
                       activeOpacity={0.9}
                       onPress={handleSubmit}
-                      disabled={isLoading || isSuccess}
+                      disabled={transitionPhase !== 'none'}
                       style={styles.buttonWrapper}
                       onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
                     >
                       <LinearGradient
-                        colors={['#F43F5E', '#EC4899', '#D946EF', '#C026D3']}
+                        colors={['#ff99cc', '#77bbff']}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                         style={styles.button}
@@ -763,17 +718,8 @@ export default function Welcome() {
                         </Animated.View>
 
                         <View style={styles.buttonContent}>
-                          {isLoading ? (
-                            <>
-                              <Sparkles size={17} color="white" />
-                              <Text style={styles.buttonText}>CONNEXION...</Text>
-                            </>
-                          ) : (
-                            <>
-                              <Text style={styles.buttonText}>ACCÉDER</Text>
-                              <Heart size={15} color="white" fill="white" />
-                            </>
-                          )}
+                          <Text style={styles.buttonText}>ACCÉDER</Text>
+                          <Heart size={15} color="white" fill="white" />
                         </View>
                       </LinearGradient>
                     </TouchableOpacity>
@@ -793,6 +739,7 @@ export default function Welcome() {
                     ))}
                   </View>
                 </BlurView>
+
               </View>
             </Animated.View>
           </Animated.View>
@@ -806,25 +753,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  blobTop: {
+    position: 'absolute',
+    top: -height * 0.15,
+    left: -width * 0.2,
+    width: width * 1.4,
+    height: height * 0.85,
+    borderRadius: width * 0.7,
+    opacity: 1,
+  },
   blob1: {
     position: 'absolute',
-    top: -120,
-    right: -120,
-    width: 550,
-    height: 550,
-    borderRadius: 275,
-    backgroundColor: '#FBCFE8',
-    opacity: 0.32,
-  },
-  blob2: {
-    position: 'absolute',
-    bottom: -180,
-    left: -120,
-    width: 500,
-    height: 500,
-    borderRadius: 250,
-    backgroundColor: '#DDD6FE',
-    opacity: 0.38,
+    bottom: -height * 0.15,
+    left: -width * 0.2,
+    width: width * 1.4,
+    height: height * 0.85,
+    borderRadius: width * 0.7,
+    opacity: 1,
   },
   particlesContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -850,29 +795,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(20),
   },
 
-  // Success overlay
-  successOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 100,
+  // Transition video (fullscreen, no borders)
+  transitionVideo: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 200,
   },
-  successEmoji: {
-    fontSize: scale(100),
-    marginBottom: 20,
-  },
-  successText: {
-    fontSize: moderateScale(28),
-    fontWeight: '300',
-    color: '#1F2937',
-    letterSpacing: 2,
-    marginBottom: 8,
-  },
-  successSubtext: {
-    fontSize: 14,
-    color: '#6B7280',
-    letterSpacing: 0.5,
+  // Container 1×1px pour buffering sans bloquer l'UI
+  videoPreload: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
   },
 
   // Logo section
@@ -893,8 +830,8 @@ const styles = StyleSheet.create({
     width: scale(280),
     height: scale(215),
     borderRadius: scale(110),
-    backgroundColor: '#FBCFE8',
-    shadowColor: '#F9A8D4',
+    backgroundColor: '#ffbed0',
+    shadowColor: '#ffbed0',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
     shadowRadius: 50,
@@ -904,8 +841,8 @@ const styles = StyleSheet.create({
     width: scale(250),
     height: scale(185),
     borderRadius: scale(95),
-    backgroundColor: '#DDD6FE',
-    shadowColor: '#C084FC',
+    backgroundColor: '#abc4e7',
+    shadowColor: '#abc4e7',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
     shadowRadius: 35,
@@ -915,34 +852,11 @@ const styles = StyleSheet.create({
     width: scale(230),
     height: scale(165),
     borderRadius: scale(83),
-    backgroundColor: '#F5D0FE',
-    shadowColor: '#E879F9',
+    backgroundColor: '#abc4e7',
+    shadowColor: '#abc4e7',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
     shadowRadius: 25,
-  },
-  logoCard: {
-    width: scale(220),
-    height: scale(155),
-    backgroundColor: 'rgba(255, 255, 255, 0.98)',
-    borderRadius: 22,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#F472B6',
-    shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.28,
-    shadowRadius: 45,
-    elevation: 18,
-    padding: 3,
-  },
-  logoInnerCard: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 20,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
   },
   logo: {
     width: '100%',
@@ -955,54 +869,35 @@ const styles = StyleSheet.create({
   },
   cardGlowOuter: {
     position: 'absolute',
-    top: -5,
-    left: -5,
-    right: -5,
-    bottom: -5,
-    borderRadius: 30,
-    backgroundColor: '#F9A8D4',
-    shadowColor: '#F9A8D4',
+    top: -20,
+    left: -20,
+    right: -20,
+    bottom: -20,
+    borderRadius: 50,
+    backgroundColor: 'transparent',
+    shadowColor: '#ffbed0',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 35,
+    shadowOpacity: 1,
+    shadowRadius: 40,
   },
   cardGlowMid: {
     position: 'absolute',
-    top: -3,
-    left: -3,
-    right: -3,
-    bottom: -3,
-    borderRadius: 30,
-    backgroundColor: '#E879F9',
-    shadowColor: '#E879F9',
+    top: -10,
+    left: -10,
+    right: -10,
+    bottom: -10,
+    borderRadius: 40,
+    backgroundColor: 'transparent',
+    shadowColor: '#abc4e7',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.7,
+    shadowOpacity: 1,
     shadowRadius: 25,
-  },
-  cardGlowInner: {
-    position: 'absolute',
-    top: -2,
-    left: -2,
-    right: -2,
-    bottom: -2,
-    borderRadius: 30,
-    backgroundColor: '#C084FC',
-    shadowColor: '#C084FC',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 22,
   },
   card: {
     borderRadius: 30,
     overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.85)',
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 25 },
-    shadowOpacity: 0.09,
-    shadowRadius: 70,
-    elevation: 18,
+    borderWidth: 0,
+    backgroundColor: 'transparent',
   },
   cardBlur: {
     width: '100%',
@@ -1018,11 +913,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(30),
     alignItems: 'center',
   },
+  appName: {
+    fontSize: moderateScale(24),
+    fontWeight: '400',
+    letterSpacing: 3,
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    textShadowColor: 'rgba(255, 185, 208, 0.5)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
   cardTitle: {
     fontSize: moderateScale(28),
     fontWeight: '300',
     letterSpacing: 5,
-    color: '#1F2937',
+    color: '#FFFFFF',
     textTransform: 'uppercase',
     marginBottom: 12,
   },
@@ -1038,7 +944,7 @@ const styles = StyleSheet.create({
     height: 1.5,
   },
   headerHeartWrapper: {
-    backgroundColor: 'rgba(244, 114, 182, 0.1)',
+    backgroundColor: 'rgba(255, 221, 253, 0.1)',
     borderRadius: 10,
     padding: 4,
   },
@@ -1076,9 +982,9 @@ const styles = StyleSheet.create({
     right: -4,
     bottom: -4,
     borderRadius: 15,
-    backgroundColor: '#F9A8D4',
+    backgroundColor: '#ffbed0',
     opacity: 0.38,
-    shadowColor: '#F9A8D4',
+    shadowColor: '#ffbed0',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.45,
     shadowRadius: 25,
@@ -1090,9 +996,9 @@ const styles = StyleSheet.create({
     right: -4,
     bottom: -4,
     borderRadius: 15,
-    backgroundColor: '#C084FC',
+    backgroundColor: '#abc4e7',
     opacity: 0.38,
-    shadowColor: '#C084FC',
+    shadowColor: '#abc4e7',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.45,
     shadowRadius: 25,
@@ -1112,11 +1018,11 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   inputFocused: {
-    borderColor: '#F472B6',
+    borderColor: '#ffbed0',
     borderWidth: 2,
   },
   inputFocusedPurple: {
-    borderColor: '#C084FC',
+    borderColor: '#abc4e7',
     borderWidth: 2,
   },
   inputIconWrapper: {
@@ -1137,7 +1043,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1.5,
-    borderColor: '#FECACA',
+    borderColor: '#ffbed0',
   },
   errorGradient: {
     paddingVertical: 14,
@@ -1205,14 +1111,14 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(192, 132, 252, 0.4)',
+    backgroundColor: 'rgba(147, 197, 253, 0.4)',
   },
   decorationDotActive: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#EC4899',
-    shadowColor: '#EC4899',
+    backgroundColor: '#ffbed0',
+    shadowColor: '#ffbed0',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6,
     shadowRadius: 8,

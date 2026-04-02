@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import { decode } from 'base64-arraybuffer';
 import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppState } from 'react-native';
 import { loginSchema, photoSchema } from './validation';
 
 // Configuration Supabase depuis variables d'environnement
@@ -18,7 +20,23 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   throw new Error('Missing Supabase configuration. Please check your .env file.');
 }
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    storage: AsyncStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
+});
+
+// Auto-refresh session when app returns to foreground
+AppState.addEventListener('change', (state) => {
+  if (state === 'active') {
+    supabase.auth.startAutoRefresh();
+  } else {
+    supabase.auth.stopAutoRefresh();
+  }
+});
 
 
 
@@ -32,8 +50,9 @@ export async function uploadMedia(
     });
 
     const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).slice(2, 8);
     const fileExt = type === 'photo' ? 'jpg' : 'mp4';
-    const fileName = `wedding-${timestamp}.${fileExt}`;
+    const fileName = `wedding-${timestamp}-${randomSuffix}.${fileExt}`;
     const filePath = `${type}s/${fileName}`;
 
     const { data, error } = await supabase.storage
@@ -80,7 +99,6 @@ export async function createPhotoEntry(
       image_url: validatedData.image_url,
       media_type: validatedData.media_type,
       likes: 0,
-      liked_by: [],
       created_by: validatedData.created_by,
       ...(validatedData.caption ? { caption: validatedData.caption } : {}),
     });
@@ -92,12 +110,16 @@ export async function createPhotoEntry(
   }
 }
 
-export async function fetchPhotos() {
+export async function fetchPhotos(page = 0, pageSize = 30) {
   try {
+    const from = page * pageSize;
+    const to = from + pageSize - 1;
+
     const { data, error } = await supabase
       .from('photos')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .range(from, to);
 
     if (error) throw error;
     return data || [];
@@ -110,26 +132,32 @@ export async function fetchPhotos() {
 export async function togglePhotoLike(
   photoId: string,
   userEmail: string,
-  currentLikedBy: string[]
 ) {
   try {
-    const hasLiked = currentLikedBy.includes(userEmail);
-    const newLikedBy = hasLiked
-      ? currentLikedBy.filter((e) => e !== userEmail)
-      : [...currentLikedBy, userEmail];
-
-    const { error } = await supabase
-      .from('photos')
-      .update({
-        likes: newLikedBy.length,
-        liked_by: newLikedBy,
-      })
-      .eq('id', photoId);
+    const { data, error } = await supabase.rpc('toggle_like', {
+      photo_id_input: photoId,
+      p_user_email: userEmail,
+    });
 
     if (error) throw error;
+    return data as { likes: number; action: 'liked' | 'unliked' };
   } catch (error) {
     if (__DEV__) console.error('[Photo] Toggle like error:', error);
     throw error;
+  }
+}
+
+export async function fetchUserLikes(userEmail: string): Promise<Set<string>> {
+  try {
+    const { data, error } = await supabase.rpc('get_user_likes', {
+      p_user_email: userEmail,
+    });
+
+    if (error) throw error;
+    return new Set((data || []).map((id: number) => String(id)));
+  } catch (error) {
+    if (__DEV__) console.error('[Photo] Fetch user likes error:', error);
+    return new Set();
   }
 }
 
@@ -184,6 +212,9 @@ export async function signIn(name: string, password: string) {
     const email = nameToEmail(validatedInput.name);
 
     if (__DEV__) console.log('[Auth] Attempting login with email:', email);
+
+    // Ensure any previous session is cleared before a fresh login
+    await supabase.auth.signOut().catch(() => {});
 
     // Authentification via Supabase Auth (sécurisé avec bcrypt)
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -350,6 +381,51 @@ export async function deleteAccount(userEmail: string): Promise<void> {
   } catch (error) {
     if (__DEV__) console.error('[Auth] Delete account error:', error);
     throw new Error('Erreur lors de la suppression du compte. Veuillez réessayer.');
+  }
+}
+
+/**
+ * Supprimer une photo (base de données + storage)
+ * Seul le créateur de la photo peut la supprimer
+ */
+export async function deletePhoto(
+  photoId: string,
+  imageUrl: string,
+  currentUserName: string,
+  photoCreatedBy: string
+): Promise<void> {
+  try {
+    // Vérification côté client que l'utilisateur est bien le créateur
+    if (currentUserName !== photoCreatedBy) {
+      throw new Error('Vous ne pouvez supprimer que vos propres photos');
+    }
+
+    // Extraire le chemin du fichier depuis l'URL publique
+    // Format: https://.../storage/v1/object/public/wedding-media/photos/wedding-xxx.jpg
+    const storagePathMatch = imageUrl.match(/wedding-media\/(.+)$/);
+    if (storagePathMatch) {
+      const filePath = storagePathMatch[1];
+      const { error: storageError } = await supabase.storage
+        .from('wedding-media')
+        .remove([filePath]);
+
+      if (storageError) {
+        if (__DEV__) console.warn('[Photo] Storage delete error (non-blocking):', storageError);
+      }
+    }
+
+    // Supprimer l'entrée de la base de données
+    const { error } = await supabase
+      .from('photos')
+      .delete()
+      .eq('id', photoId);
+
+    if (error) throw error;
+
+    if (__DEV__) console.log('[Photo] Deleted successfully:', photoId);
+  } catch (error) {
+    if (__DEV__) console.error('[Photo] Delete error:', error);
+    throw error;
   }
 }
 

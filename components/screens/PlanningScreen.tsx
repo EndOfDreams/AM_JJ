@@ -1,14 +1,16 @@
-import { scheduleEventNotifications } from '@/lib/notifications';
 import { scale, moderateScale } from '@/lib/responsive';
 import { supabase } from '@/lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Check, Clock, Sparkles } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, AppState, Dimensions, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumHeader } from '../ui/PremiumHeader';
 
 const { width } = Dimensions.get('window');
+
+// Planning visible uniquement à partir du 6 juin 2026 à 5h00
+const PLANNING_UNLOCK_DATE = new Date(2026, 5, 6, 5, 0, 0);
 
 // --- Types ---
 interface PlanningEvent {
@@ -235,14 +237,13 @@ export default function PlanningScreen() {
             const { data, error } = await supabase
                 .from('PlanningEvent')
                 .select('*')
+                .neq('hidden', true)
                 .order('order', { ascending: true });
 
             if (error) {
                 if (__DEV__) console.error('Error fetching planning:', error);
             } else if (data) {
                 setEvents(data);
-                // Schedule local notifications 15 min before each event
-                scheduleEventNotifications(data);
             }
         } catch (err) {
             if (__DEV__) console.error('Exception fetching planning:', err);
@@ -252,21 +253,34 @@ export default function PlanningScreen() {
     useEffect(() => {
         fetchEvents();
 
-        // Optional: Realtime Subscription
-        const channel = supabase
-            .channel('planning_updates')
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'PlanningEvent' },
-                (payload) => {
-                    if (__DEV__) console.log('Change received!', payload);
-                    fetchEvents(); // Refresh data on any change
-                }
-            )
-            .subscribe();
+        const setupChannel = () => {
+            return supabase
+                .channel('planning_updates')
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: 'PlanningEvent' },
+                    (payload) => {
+                        if (__DEV__) console.log('Change received!', payload);
+                        fetchEvents();
+                    }
+                )
+                .subscribe();
+        };
+
+        let channel = setupChannel();
+
+        // Reconnect realtime when app returns from background
+        const appStateSub = AppState.addEventListener('change', (state) => {
+            if (state === 'active') {
+                supabase.removeChannel(channel);
+                channel = setupChannel();
+                fetchEvents();
+            }
+        });
 
         return () => {
             supabase.removeChannel(channel);
+            appStateSub.remove();
         };
     }, []);
 
@@ -277,6 +291,8 @@ export default function PlanningScreen() {
 
     const insets = useSafeAreaInsets();
 
+    const isPlanningAvailable = currentTime >= PLANNING_UNLOCK_DATE;
+
     return (
         <View style={styles.container}>
             {/* Background Gradient (Purple-50 to Pink-50 imitation) */}
@@ -285,7 +301,22 @@ export default function PlanningScreen() {
                 style={StyleSheet.absoluteFillObject}
             />
 
-            {/* Premium Header: Title "PLANNING" */}
+            {!isPlanningAvailable ? (
+                <>
+                    <PremiumHeader
+                        insetTop={insets.top}
+                        title="PLANNING"
+                        subtitle="Programme de la journée ✨"
+                    />
+                    <View style={styles.lockedContainer}>
+                        <Text style={styles.lockedEmoji}>💍</Text>
+                        <Text style={styles.lockedTitle}>Planning bientôt disponible</Text>
+                        <Text style={styles.lockedSubtitle}>
+                            Le programme sera dévoilé{'\n'}le 6 juin 2026 à 5h00
+                        </Text>
+                    </View>
+                </>
+            ) : (
             <ScrollView
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
@@ -329,6 +360,7 @@ export default function PlanningScreen() {
                     <View style={{ height: 80 + insets.bottom }} />
                 </View>
             </ScrollView>
+            )}
         </View>
     );
 }
@@ -336,6 +368,30 @@ export default function PlanningScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+    },
+    lockedContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 40,
+        gap: 16,
+    },
+    lockedEmoji: {
+        fontSize: 64,
+        marginBottom: 8,
+    },
+    lockedTitle: {
+        fontSize: moderateScale(22),
+        fontWeight: '300',
+        color: '#1F2937',
+        letterSpacing: 1,
+        textAlign: 'center',
+    },
+    lockedSubtitle: {
+        fontSize: 14,
+        color: '#9CA3AF',
+        textAlign: 'center',
+        lineHeight: 22,
     },
     scrollContent: {
         paddingBottom: 0,

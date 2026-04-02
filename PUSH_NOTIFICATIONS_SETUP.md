@@ -77,8 +77,8 @@ npx supabase functions deploy send-event-notifications
 
 ```bash
 # Remplacer VOTRE_PROJECT_REF et VOTRE_SERVICE_ROLE_KEY
-curl -X POST https://VOTRE_PROJECT_REF.supabase.co/functions/v1/send-event-notifications \
-  -H "Authorization: Bearer VOTRE_SERVICE_ROLE_KEY" \
+curl -X POST https://sxdgvuqawjehfjexziwu.supabase.co/functions/v1/send-event-notifications \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4ZGd2dXFhd2plaGZqZXh6aXd1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzgzMjAxOCwiZXhwIjoyMDc5NDA4MDE4fQ.iuyWOsphGWJYAEY6AeeSSgdEelRgZJStG5b6HCXGYB0" \
   -H "Content-Type: application/json"
 ```
 

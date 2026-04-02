@@ -6,6 +6,7 @@ import PlanningScreen from '@/components/screens/PlanningScreen';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   DeviceEventEmitter,
   ScrollView,
   StyleSheet,
@@ -18,11 +19,19 @@ export default function Home() {
   const params = useLocalSearchParams();
   const scrollViewRef = useRef<ScrollView>(null);
   const currentPage = useRef<'Feed' | 'Camera' | 'Planning'>('Camera');
-  // Use state only for triggering re-renders of valid nav items if needed,
-  // but better to keep it synced. For performance we might use ref if just logic,
-  // but BottomNav needs state.
   const [activePage, setActivePage] = useState<'Feed' | 'Camera' | 'Planning'>('Camera');
   const [unseenPhotosCount, setUnseenPhotosCount] = useState(0);
+  const fadeInAnim = useRef(new Animated.Value(1)).current;
+  const [fadeInDone, setFadeInDone] = useState(false);
+
+  // Fade in from white on mount (bridge from video transition)
+  useEffect(() => {
+    Animated.timing(fadeInAnim, {
+      toValue: 0,
+      duration: 500,
+      useNativeDriver: true,
+    }).start(() => setFadeInDone(true));
+  }, []);
 
   // A1: Listen for unseen photo count from FeedScreen
   useEffect(() => {
@@ -83,7 +92,7 @@ export default function Home() {
       >
         {/* Screen 1: Feed (Index 0) - Left */}
         <View style={[styles.screen, { width }]}>
-          <FeedScreen />
+          <FeedScreen isFocused={activePage === 'Feed'} />
         </View>
 
         {/* Screen 2: Camera (Index 1) - Center */}
@@ -105,6 +114,14 @@ export default function Home() {
           newPhotosCount={unseenPhotosCount}
         />
       </View>
+
+      {/* Fade in from white after video transition */}
+      {!fadeInDone && (
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFillObject, { backgroundColor: '#ffffff', opacity: fadeInAnim, zIndex: 9999 }]}
+        />
+      )}
     </View>
   );
 }

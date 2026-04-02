@@ -3,17 +3,6 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-// --- Types ---
-
-interface PlanningEvent {
-    id: number;
-    time: string;      // "HH:MM" or "HHhMM"
-    title: string;
-    description: string;
-    started: boolean;
-    order: number;
-}
-
 // --- Android Notification Channel ---
 
 export async function setupNotificationChannels(): Promise<void> {
@@ -21,7 +10,7 @@ export async function setupNotificationChannels(): Promise<void> {
 
     await Notifications.setNotificationChannelAsync('wedding-events', {
         name: 'Événements du mariage',
-        description: 'Rappels 15 minutes avant chaque événement',
+        description: 'Notifications push du mariage',
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#EC4899',
@@ -37,113 +26,10 @@ export function configureNotificationHandler(): void {
             shouldShowAlert: true,
             shouldPlaySound: true,
             shouldSetBadge: false,
+            shouldShowBanner: true,
+            shouldShowList: true,
         }),
     });
-}
-
-// --- Permission ---
-
-export async function requestNotificationPermission(): Promise<boolean> {
-    if (!Device.isDevice) {
-        if (__DEV__) console.log('[Notif] Skipping — not a physical device');
-        return false;
-    }
-
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-
-    if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync({
-            ios: {
-                allowAlert: true,
-                allowBadge: true,
-                allowSound: true,
-            },
-        });
-        finalStatus = status;
-    }
-
-    if (finalStatus !== 'granted') {
-        if (__DEV__) console.log('[Notif] Permission denied');
-        return false;
-    }
-
-    if (__DEV__) console.log('[Notif] Permission granted');
-    return true;
-}
-
-// --- Parse event time string to Date ---
-
-function parseEventTimeToDate(timeStr: string): Date | null {
-    const normalized = timeStr.toLowerCase().replace('h', ':').trim();
-    const parts = normalized.split(':');
-    if (parts.length < 2) return null;
-
-    const hours = parseInt(parts[0], 10);
-    const minutes = parseInt(parts[1], 10);
-
-    if (isNaN(hours) || isNaN(minutes)) return null;
-
-    const date = new Date();
-    date.setHours(hours, minutes, 0, 0);
-    return date;
-}
-
-// --- Schedule All Event Notifications ---
-
-export async function scheduleEventNotifications(events: PlanningEvent[]): Promise<void> {
-    try {
-        // Cancel all previously scheduled notifications to avoid duplicates
-        await Notifications.cancelAllScheduledNotificationsAsync();
-
-        const now = new Date();
-        let scheduledCount = 0;
-
-        for (const event of events) {
-            if (!event.time) continue;
-
-            const eventDate = parseEventTimeToDate(event.time);
-            if (!eventDate) continue;
-
-            // Notification 15 minutes before
-            const notifDate = new Date(eventDate.getTime() - 15 * 60 * 1000);
-
-            // Skip if notification time is already past
-            if (notifDate <= now) continue;
-
-            await Notifications.scheduleNotificationAsync({
-                content: {
-                    title: `💒 ${event.title}`,
-                    body: event.description
-                        ? `Dans 15 minutes — ${event.description}`
-                        : `Dans 15 minutes — Préparez-vous !`,
-                    data: { screen: 'planning', eventId: String(event.id) },
-                    sound: 'default',
-                    ...(Platform.OS === 'android' && {
-                        channelId: 'wedding-events',
-                    }),
-                },
-                trigger: {
-                    type: Notifications.SchedulableTriggerInputTypes.DATE,
-                    date: notifDate,
-                },
-            });
-
-            scheduledCount++;
-            if (__DEV__) {
-                console.log(
-                    `[Notif] Scheduled: "${event.title}" at ${notifDate.toLocaleTimeString()}`
-                );
-            }
-        }
-
-        if (__DEV__) {
-            const all = await Notifications.getAllScheduledNotificationsAsync();
-            console.log(`[Notif] Total scheduled: ${all.length} (${scheduledCount} new)`);
-        }
-    } catch (error) {
-        if (__DEV__) console.error('[Notif] Scheduling error:', error);
-    }
 }
 
 // --- Push Notifications (Remote) ---
@@ -204,6 +90,54 @@ export async function registerForPushNotifications(userId: string): Promise<stri
     } catch (error) {
         if (__DEV__) console.error('[Notif] Registration error:', error);
         return null;
+    }
+}
+
+/**
+ * Envoyer une notification push quand quelqu'un like une photo
+ * Fire-and-forget : ne bloque pas le flow du like
+ */
+export async function sendLikeNotification(
+    photoCreatorName: string | undefined,
+    likerName: string | null
+): Promise<void> {
+    try {
+        // Pas de notif si données manquantes ou si on like sa propre photo
+        if (!photoCreatorName || !likerName || photoCreatorName === likerName) return;
+
+        const { supabase } = await import('./supabase');
+
+        // Récupérer le push_token du créateur de la photo
+        const { data: guest, error } = await supabase
+            .from('guests')
+            .select('push_token')
+            .eq('full_name', photoCreatorName)
+            .single();
+
+        if (error || !guest?.push_token) {
+            if (__DEV__) console.log('[Notif] No token for', photoCreatorName);
+            return;
+        }
+
+        // Envoyer via Expo Push API
+        await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                to: guest.push_token,
+                title: `❤️ ${likerName}`,
+                body: 'a aimé votre photo',
+                sound: 'default',
+                priority: 'high',
+            }),
+        });
+
+        if (__DEV__) console.log('[Notif] Like notification sent to', photoCreatorName);
+    } catch (err) {
+        if (__DEV__) console.warn('[Notif] Like notification error:', err);
     }
 }
 

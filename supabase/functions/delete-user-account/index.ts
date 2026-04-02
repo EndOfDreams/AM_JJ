@@ -72,34 +72,36 @@ Deno.serve(async (req) => {
       throw new Error('Failed to anonymize photos');
     }
 
-    // Step 2: Remove user's likes from all photos
+    // Step 2: Remove user's likes from photo_likes table + update counters
     console.log('[DeleteAccount] Removing likes...');
-    const { data: likedPhotos, error: fetchLikesError } = await supabaseAdmin
-      .from('photos')
-      .select('id, liked_by')
-      .contains('liked_by', [user.email]);
+    // Get affected photo IDs before deleting
+    const { data: userLikes } = await supabaseAdmin
+      .from('photo_likes')
+      .select('photo_id')
+      .eq('user_email', user.email);
 
-    if (fetchLikesError) {
-      console.error('[DeleteAccount] Failed to fetch liked photos:', fetchLikesError);
-      throw new Error('Failed to fetch liked photos');
+    // Delete all likes by this user
+    const { error: deleteLikesError } = await supabaseAdmin
+      .from('photo_likes')
+      .delete()
+      .eq('user_email', user.email);
+
+    if (deleteLikesError) {
+      console.error('[DeleteAccount] Failed to delete likes:', deleteLikesError);
     }
 
-    if (likedPhotos && likedPhotos.length > 0) {
-      for (const photo of likedPhotos) {
-        const updatedLikes = photo.liked_by.filter((email: string) => email !== user.email);
-        const newLikesCount = updatedLikes.length;
+    // Update denormalized counters for affected photos
+    if (userLikes && userLikes.length > 0) {
+      for (const like of userLikes) {
+        const { count } = await supabaseAdmin
+          .from('photo_likes')
+          .select('*', { count: 'exact', head: true })
+          .eq('photo_id', like.photo_id);
 
-        const { error: updateLikesError } = await supabaseAdmin
+        await supabaseAdmin
           .from('photos')
-          .update({
-            liked_by: updatedLikes,
-            likes: newLikesCount
-          })
-          .eq('id', photo.id);
-
-        if (updateLikesError) {
-          console.error('[DeleteAccount] Failed to update likes for photo:', photo.id, updateLikesError);
-        }
+          .update({ likes: count || 0 })
+          .eq('id', like.photo_id);
       }
     }
 

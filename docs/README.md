@@ -1,9 +1,9 @@
-# Privacy Policy - AM_JJ
+# Privacy Policy - WedSnap
 
-This folder contains the privacy policy for the AM_JJ wedding photo sharing app.
+This folder contains the privacy policy for the WedSnap wedding photo sharing app.
 
 ## URL
-https://camilleperes.github.io/AM_jj/privacy-policy.html
+https://endofdreams.github.io/AM_JJ/privacy-policy.html
 
 ## GitHub Pages Setup
 

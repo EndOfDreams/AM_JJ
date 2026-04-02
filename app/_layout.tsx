@@ -128,7 +128,7 @@ export default function RootLayout() {
   const [isNavigating, setIsNavigating] = useState(false);
   const segments = useSegments();
   const router = useRouter();
-  const notifResponseListener = useRef<Notifications.EventSubscription>();
+  const notifResponseListener = useRef<Notifications.EventSubscription | undefined>(undefined);
 
   // 0. Setup notifications (once)
   useEffect(() => {
@@ -203,14 +203,21 @@ export default function RootLayout() {
 
     if (__DEV__) console.log("[layout] Navigation check:", { isLogged, inWelcome, segments });
 
-    // Si pas connecté et pas sur welcome -> aller vers welcome
+    // Si pas connecté et pas sur welcome -> vérifier AsyncStorage d'abord (welcome peut venir de se connecter)
     if (!isLogged && !inWelcome) {
-      if (__DEV__) console.log("[layout] Not logged + not on welcome → redirecting to /welcome");
-      setIsNavigating(true);
-      setTimeout(() => {
-        router.replace("/welcome");
-        setIsNavigating(false);
-      }, 50);
+      AsyncStorage.getItem("wedding_logged_in").then(stored => {
+        if (stored === "true") {
+          // Welcome vient de se connecter — mettre à jour l'état, pas de redirection
+          setIsLogged(true);
+        } else {
+          if (__DEV__) console.log("[layout] Not logged + not on welcome → redirecting to /welcome");
+          setIsNavigating(true);
+          setTimeout(() => {
+            router.replace("/welcome");
+            setIsNavigating(false);
+          }, 50);
+        }
+      });
     }
     // Si connecté et sur welcome -> aller vers index
     else if (isLogged && inWelcome) {
@@ -241,8 +248,7 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <Stack screenOptions={{
           headerShown: false,
-          animation: "fade", // Pas de slide, juste un fade
-          animationDuration: 200
+          animation: "none",
         }}>
           <Stack.Screen name="welcome" />
           <Stack.Screen name="index" />

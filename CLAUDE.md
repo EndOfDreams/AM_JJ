@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## MCP Servers
+
+Pour toute demande en rapport avec **GitHub** ou **n8n**, les informations de connexion (URLs, clés API, tokens) sont centralisées dans le fichier `~/.claude/settings.json` sous la clé `mcpServers`. Toujours s'y référer pour récupérer les credentials et configurations de ces services.
+
 ## Project Overview
 
 AM_JJ is an Expo React Native wedding photo-sharing application with premium animations, real-time updates, and media capture capabilities. Built with TypeScript, Supabase, and React Native Reanimated.

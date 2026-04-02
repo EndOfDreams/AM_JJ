@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scale, moderateScale } from '@/lib/responsive';
 
+import { ResizeMode, Video } from 'expo-av';
 import { Camera, CameraView, FlashMode } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
 // MediaLibrary import removed - not needed, causes Expo Go Android issues
@@ -61,9 +62,17 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
     const [recordingProgress, setRecordingProgress] = useState(0);
     const [currentUser, setCurrentUser] = useState<string>('Moi');
 
-    // Photo preview states (Snapchat-style)
+    // Media preview states (Snapchat-style)
     const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
+    const [capturedMediaType, setCapturedMediaType] = useState<'photo' | 'video'>('photo');
     const [isPreviewMode, setIsPreviewMode] = useState(false);
+
+    // Reset camera ready state quand la caméra se démonte/remonte
+    useEffect(() => {
+        if (!isFocused || isPreviewMode) {
+            setIsCameraReady(false);
+        }
+    }, [isFocused, isPreviewMode]);
     // A3: Caption input
     const [caption, setCaption] = useState('');
     // Keyboard height tracking for caption input
@@ -289,6 +298,7 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
             if (photo && photo.uri) {
                 // Enter preview mode instead of uploading immediately
                 setCapturedPhotoUri(photo.uri);
+                setCapturedMediaType('photo');
                 setIsPreviewMode(true);
                 setIsCapturing(false);
             }
@@ -310,14 +320,15 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
         }
     };
 
-    // Handle retake photo (X button)
+    // Handle retake (X button)
     const handleRetake = () => {
         setCapturedPhotoUri(null);
+        setCapturedMediaType('photo');
         setIsPreviewMode(false);
         setCaption('');
     };
 
-    // Handle send photo (Arrow button)
+    // Handle send media (Arrow button)
     const handleSend = async () => {
         if (!capturedPhotoUri) return;
 
@@ -334,17 +345,17 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
         }
 
         const trimmedCaption = caption.trim() || undefined;
+        const isVideo = capturedMediaType === 'video';
 
         // Show success animation
-        showSuccessAnimation('Photo ajoutée au feed ! ✨');
+        showSuccessAnimation(isVideo ? 'Vidéo ajoutée au feed ! 🎬' : 'Photo ajoutée au feed ! ✨');
 
         // Add optimistic update to feed
         DeviceEventEmitter.emit('media.optimistic', {
             id: 'temp-' + Date.now(),
             image_url: capturedPhotoUri,
-            media_type: 'photo',
+            media_type: capturedMediaType,
             likes: 0,
-            liked_by: [],
             created_at: new Date().toISOString(),
             created_by: currentUserName,
             is_optimistic: true,
@@ -352,118 +363,88 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
         });
 
         // Upload in background
-        uploadPhotoInBackground(capturedPhotoUri, currentUserName, trimmedCaption);
+        if (isVideo) {
+            uploadVideoInBackground(capturedPhotoUri, currentUserName, trimmedCaption);
+        } else {
+            uploadPhotoInBackground(capturedPhotoUri, currentUserName, trimmedCaption);
+        }
 
         // Exit preview mode
         setCapturedPhotoUri(null);
+        setCapturedMediaType('photo');
         setIsPreviewMode(false);
         setCaption('');
     };
 
     const isPressed = useRef(false);
     const isLongPress = useRef(false);
+    const isRecordingActive = useRef(false); // true seulement quand recordAsync() est en cours
 
     const startRecording = async () => {
-        if (!cameraRef.current || !isCameraReady || isRecording) return;
+        if (__DEV__) console.log('[Video] startRecording called', {
+            hasRef: !!cameraRef.current, isCameraReady, isActive: isRecordingActive.current, isPressed: isPressed.current
+        });
+        if (!cameraRef.current || !isCameraReady || isRecordingActive.current) return;
         if (!isPressed.current) return;
 
-        // 🟢 RECUPERATION EN DIRECT POUR VIDEO
-        let currentUserName = 'Moi';
-        try {
-            const userInfo = await AsyncStorage.getItem('wedding_user_info');
-            if (userInfo) {
-                const user = JSON.parse(userInfo);
-                if (user.full_name) currentUserName = user.full_name;
-            }
-        } catch (e) {
-            if (__DEV__) console.log('Erreur lecture user info:', e);
-        }
+        setIsRecording(true);
+        setRecordingProgress(0);
 
         try {
-            setIsRecording(true);
-            setRecordingProgress(0);
-
             const startTime = Date.now();
             recordingTimerRef.current = setInterval(() => {
                 const elapsed = Date.now() - startTime;
                 const progress = Math.min((elapsed / MAX_VIDEO_DURATION) * 100, 100);
                 setRecordingProgress(progress);
 
-                if (elapsed >= MAX_VIDEO_DURATION) {
-                    stopRecording();
+                if (elapsed >= MAX_VIDEO_DURATION && isRecordingActive.current) {
+                    cameraRef.current?.stopRecording();
                 }
             }, 100) as any;
 
-            let video = null;
-            let attempts = 0;
-            while (!video && attempts < 3) {
-                try {
-                    video = await cameraRef.current.recordAsync({
-                        maxDuration: MAX_VIDEO_DURATION / 1000,
-                    });
-                } catch (e: any) {
-                    if (e.message?.includes('not ready') || e.message?.includes('call stopRecording')) {
-                        if (__DEV__) console.log('Camera busy/not ready, retrying...', attempts);
-                        await new Promise(r => setTimeout(r, 500));
-                        attempts++;
-                        if (!isPressed.current) return;
-                    } else {
-                        throw e;
-                    }
-                }
-            }
+            // Lancer l'enregistrement — cette promesse se résout quand on appelle stopRecording()
+            isRecordingActive.current = true;
+            if (__DEV__) console.log('[Video] Calling recordAsync...');
+            const video = await cameraRef.current.recordAsync({
+                maxDuration: MAX_VIDEO_DURATION / 1000,
+            });
+            isRecordingActive.current = false;
+            if (__DEV__) console.log('[Video] recordAsync resolved:', video ? 'got video' : 'no video', video?.uri?.substring(0, 50));
 
+            // Cleanup
             if (recordingTimerRef.current) {
                 clearInterval(recordingTimerRef.current);
+                recordingTimerRef.current = null;
             }
+            setIsRecording(false);
+            setRecordingProgress(0);
 
             if (video && video.uri) {
-                showSuccessAnimation('Vidéo ajoutée au feed ! 🎬');
-
-                DeviceEventEmitter.emit('media.optimistic', {
-                    id: 'temp-' + Date.now(),
-                    image_url: video.uri,
-                    media_type: 'video',
-                    likes: 0,
-                    liked_by: [],
-                    created_at: new Date().toISOString(),
-                    created_by: currentUserName,
-                    is_optimistic: true
-                });
-
-                setIsRecording(false);
-                setRecordingProgress(0);
-                uploadVideoInBackground(video.uri, currentUserName);
+                setCapturedPhotoUri(video.uri);
+                setCapturedMediaType('video');
+                setIsPreviewMode(true);
             }
 
-        } catch (error) {
-            if (__DEV__) console.error('Erreur enregistrement:', error);
+        } catch (error: any) {
+            if (__DEV__) console.error('[Video] Erreur enregistrement:', error?.message || error);
+            isRecordingActive.current = false;
             setIsRecording(false);
             setRecordingProgress(0);
             if (recordingTimerRef.current) {
                 clearInterval(recordingTimerRef.current);
+                recordingTimerRef.current = null;
             }
         }
     };
 
-    const uploadVideoInBackground = async (uri: string, userName: string) => {
+    const uploadVideoInBackground = async (uri: string, userName: string, videoCaption?: string) => {
         try {
             const { uploadMedia, createPhotoEntry } = await import('@/lib/supabase');
             const videoUrl = await uploadMedia(uri, 'video');
-            await createPhotoEntry(videoUrl, 'video', userName);
+            await createPhotoEntry(videoUrl, 'video', userName, videoCaption);
             if (__DEV__) console.log('Vidéo uploadée avec succès par', userName);
         } catch (error) {
             if (__DEV__) console.error('Erreur upload vidéo:', error);
-        }
-    };
-
-    const stopRecording = async () => {
-        if (!cameraRef.current || !isRecording) return;
-
-        try {
-            cameraRef.current.stopRecording();
-        } catch (error) {
-            if (__DEV__) console.error('Erreur arrêt enregistrement:', error);
         }
     };
 
@@ -482,10 +463,19 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
 
         if (longPressTimerRef.current) {
             clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
         }
 
-        if (isRecording) {
-            stopRecording();
+        if (__DEV__) console.log('[Video] handlePressOut', { isActive: isRecordingActive.current, isLongPress: isLongPress.current });
+
+        if (isRecordingActive.current) {
+            // L'enregistrement est en cours via recordAsync — on l'arrête proprement
+            if (__DEV__) console.log('[Video] Stopping recording...');
+            try {
+                cameraRef.current?.stopRecording();
+            } catch (e) {
+                if (__DEV__) console.error('[Video] Erreur stop:', e);
+            }
         } else if (!isLongPress.current && !isCapturing && isCameraReady) {
             capturePhoto();
         }
@@ -553,7 +543,7 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
                             ref={cameraRef}
                             style={StyleSheet.absoluteFill}
                             facing={facing}
-                            mode="picture"
+                            mode="video"
                             flash={flashMode}
                             onCameraReady={() => setIsCameraReady(true)}
                         />
@@ -600,11 +590,22 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
             {/* PHOTO PREVIEW (Snapchat-style) */}
             {isPreviewMode && capturedPhotoUri && (
                 <View style={styles.previewContainer}>
-                    <Image
-                        source={{ uri: capturedPhotoUri }}
-                        style={styles.previewImage}
-                        resizeMode="cover"
-                    />
+                    {capturedMediaType === 'video' ? (
+                        <Video
+                            source={{ uri: capturedPhotoUri }}
+                            style={styles.previewImage}
+                            resizeMode={ResizeMode.COVER}
+                            shouldPlay
+                            isLooping
+                            isMuted={false}
+                        />
+                    ) : (
+                        <Image
+                            source={{ uri: capturedPhotoUri }}
+                            style={styles.previewImage}
+                            resizeMode="cover"
+                        />
+                    )}
 
                     {/* Retake Button (X top-left) */}
                     <TouchableOpacity

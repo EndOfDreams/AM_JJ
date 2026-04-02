@@ -258,6 +258,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     color: '#9CA3AF',
+    marginBottom: 8,
   },
   navLabelActive: {
     color: '#DB2777',
