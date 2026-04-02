@@ -463,7 +463,7 @@ export default function Welcome() {
 
       {/* Top Image Blob */}
       <Image
-        source={require('../assets/dégradé_rose.png')}
+        source={require('../assets/degrade_rose.png')}
         style={styles.blobTop}
         resizeMode="cover"
       />
