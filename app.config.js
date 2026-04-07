@@ -5,7 +5,7 @@ module.exports = {
         owner: "endofdreams32",
         version: "1.0.4",
         orientation: "portrait",
-        icon: "./assets/images/icon.png",
+        icon: "./assets/images/logo_wedsnap.png",
         scheme: "amjj",
         userInterfaceStyle: "light", // STORE_COMPLIANCE: Explicitly set to light until dark mode is fully implemented
         newArchEnabled: true,

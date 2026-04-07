@@ -7,7 +7,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Video, ResizeMode } from "expo-av";
 import { Asset } from "expo-asset";
-import { CheckCircle2, Heart, Lock, Sparkles, User } from "lucide-react-native";
+import { CheckCircle2, Hash, Heart, Lock, Sparkles, User } from "lucide-react-native";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -250,9 +250,12 @@ const AnimatedBlob: React.FC<{ index: number }> = ({ index }) => {
 
 export default function Welcome() {
   const router = useRouter();
+  const [eventCode, setEventCode] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
+  const VALID_EVENT_CODES = ['AMJJ2024', 'DEMO2024'];
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [transitionPhase, setTransitionPhase] = useState<'none' | 'video'>('none');
   const whiteOverlayAnim = useRef(new Animated.Value(0)).current;
@@ -409,8 +412,20 @@ export default function Welcome() {
   const handleSubmit = async () => {
     setErrorMessage("");
 
-    if (!name.trim() || !password.trim()) {
+    if (!eventCode.trim() || !name.trim() || !password.trim()) {
       setErrorMessage("Veuillez remplir tous les champs");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Animated.sequence([
+        Animated.timing(cardScale, { toValue: 0.98, duration: 50, useNativeDriver: true }),
+        Animated.timing(cardScale, { toValue: 1.02, duration: 50, useNativeDriver: true }),
+        Animated.timing(cardScale, { toValue: 0.98, duration: 50, useNativeDriver: true }),
+        Animated.timing(cardScale, { toValue: 1, duration: 50, useNativeDriver: true }),
+      ]).start();
+      return;
+    }
+
+    if (!VALID_EVENT_CODES.includes(eventCode.trim().toUpperCase())) {
+      setErrorMessage("Code événement invalide");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Animated.sequence([
         Animated.timing(cardScale, { toValue: 0.98, duration: 50, useNativeDriver: true }),
@@ -432,12 +447,13 @@ export default function Welcome() {
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      // Auth réussie → fade + vidéo (déjà bufferisée, démarre instantanément)
+      // Auth réussie → vidéo fullscreen immédiatement + fade en parallèle
+      setTransitionPhase('video');
       Animated.timing(fadeAnim, {
         toValue: 0,
-        duration: 400,
+        duration: 200,
         useNativeDriver: true,
-      }).start(() => setTransitionPhase('video'));
+      }).start();
 
     } catch (err: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -513,15 +529,13 @@ export default function Welcome() {
       )}
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "position"}
-        keyboardVerticalOffset={10}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboardView}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          scrollEnabled={true}
         >
           <Animated.View
             style={[
@@ -590,6 +604,47 @@ export default function Welcome() {
 
                   {/* Form */}
                   <View style={styles.formContainer}>
+                    {/* Event Code Input */}
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.inputLabel}>CODE ÉVÉNEMENT</Text>
+                      <View style={styles.inputWrapper}>
+                        {focusedField === 'eventCode' && (
+                          <Animated.View style={styles.inputGlowPink} />
+                        )}
+                        <View style={[
+                          styles.inputContainer,
+                          focusedField === 'eventCode' && styles.inputFocused
+                        ]}>
+                          <LinearGradient
+                            colors={
+                              focusedField === 'eventCode'
+                                ? ['#ffbed0', '#FFFFFF']
+                                : ['#FFFFFF', '#FFFFFF']
+                            }
+                            style={styles.inputGradientBg}
+                          />
+                          <View style={styles.inputIconWrapper}>
+                            <Hash
+                              size={17}
+                              color={focusedField === 'eventCode' ? '#ffbed0' : '#9CA3AF'}
+                              strokeWidth={2}
+                            />
+                          </View>
+                          <TextInput
+                            placeholder="Code de votre événement"
+                            placeholderTextColor="#9CA3AF"
+                            style={styles.input}
+                            value={eventCode}
+                            onChangeText={(t) => { setEventCode(t); setErrorMessage(""); }}
+                            onFocus={() => handleFocus('eventCode')}
+                            onBlur={() => setFocusedField(null)}
+                            autoCapitalize="characters"
+                            autoCorrect={false}
+                          />
+                        </View>
+                      </View>
+                    </View>
+
                     {/* Name Input */}
                     <View style={styles.inputGroup}>
                       <Text style={styles.inputLabel}>NOM COMPLET</Text>
@@ -803,6 +858,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 200,
+    backgroundColor: 'black',
   },
   // Container 1×1px pour buffering sans bloquer l'UI
   videoPreload: {

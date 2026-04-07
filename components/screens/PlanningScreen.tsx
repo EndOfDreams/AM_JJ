@@ -302,20 +302,20 @@ export default function PlanningScreen() {
             />
 
             {!isPlanningAvailable ? (
-                <>
+                <View style={{ flex: 1 }}>
                     <PremiumHeader
                         insetTop={insets.top}
                         title="PLANNING"
                         subtitle="Programme de la journée ✨"
                     />
-                    <View style={styles.lockedContainer}>
+                    <View style={[styles.lockedContainer, { paddingBottom: 80 + insets.bottom }]}>
                         <Text style={styles.lockedEmoji}>💍</Text>
                         <Text style={styles.lockedTitle}>Planning bientôt disponible</Text>
                         <Text style={styles.lockedSubtitle}>
                             Le programme sera dévoilé{'\n'}le 6 juin 2026 à 5h00
                         </Text>
                     </View>
-                </>
+                </View>
             ) : (
             <ScrollView
                 contentContainerStyle={styles.scrollContent}

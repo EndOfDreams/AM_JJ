@@ -111,7 +111,7 @@ export default function Home() {
         <BottomNav
           currentPage={activePage}
           onNavigate={navigateTo}
-          newPhotosCount={unseenPhotosCount}
+          newPhotosCount={activePage === 'Feed' ? 0 : unseenPhotosCount}
         />
       </View>
 

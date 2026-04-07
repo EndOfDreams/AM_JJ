@@ -56,8 +56,8 @@ function shouldNotifyForEvent(event: PlanningEvent, nowParis: { hours: number; m
   // Notification = 15 minutes avant
   const notifMinutes = eventMinutes - 15;
 
-  // Vérifier si on est dans une fenêtre de ±1 minute
-  return Math.abs(nowMinutes - notifMinutes) <= 1;
+  // Vérifier si on est exactement à la minute de notification
+  return Math.abs(nowMinutes - notifMinutes) === 0;
 }
 
 /**

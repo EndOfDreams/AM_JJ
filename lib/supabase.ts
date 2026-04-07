@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-import { decode } from 'base64-arraybuffer';
 import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -44,38 +43,37 @@ export async function uploadMedia(
   uri: string,
   type: 'photo' | 'video'
 ): Promise<string> {
-  try {
-    const base64 = await FileSystem.readAsStringAsync(uri, {
-      encoding: 'base64',
-    });
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).slice(2, 8);
+  const fileExt = type === 'photo' ? 'jpg' : 'mp4';
+  const fileName = `wedding-${timestamp}-${randomSuffix}.${fileExt}`;
+  const filePath = `${type}s/${fileName}`;
+  const contentType = type === 'photo' ? 'image/jpeg' : 'video/mp4';
 
-    const timestamp = Date.now();
-    const randomSuffix = Math.random().toString(36).slice(2, 8);
-    const fileExt = type === 'photo' ? 'jpg' : 'mp4';
-    const fileName = `wedding-${timestamp}-${randomSuffix}.${fileExt}`;
-    const filePath = `${type}s/${fileName}`;
+  // FileSystem.uploadAsync = upload binaire natif iOS/Android.
+  // Évite le bug React Native où fetch + ArrayBuffer retourne du HTML depuis le CDN Supabase.
+  const uploadUrl = `${SUPABASE_URL}/storage/v1/object/wedding-media/${filePath}`;
+  const response = await FileSystem.uploadAsync(uploadUrl, uri, {
+    httpMethod: 'POST',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    headers: {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Content-Type': contentType,
+      'cache-control': '3600',
+    },
+  });
 
-    const { data, error } = await supabase.storage
-      .from('wedding-media')
-      .upload(filePath, decode(base64), {
-        contentType: type === 'photo' ? 'image/jpeg' : 'video/mp4',
-        upsert: false,
-      });
-
-    if (error) {
-      if (__DEV__) console.error('[Storage] Upload error:', error);
-      throw error;
-    }
-
-    const { data: publicData } = supabase.storage
-      .from('wedding-media')
-      .getPublicUrl(filePath);
-
-    return publicData.publicUrl;
-  } catch (error) {
-    if (__DEV__) console.error('[Media] Upload error:', error);
-    throw error;
+  if (response.status !== 200) {
+    if (__DEV__) console.error('[Storage] Upload error:', response.status, response.body);
+    throw new Error(`Upload failed: ${response.status}`);
   }
+
+  const { data: publicData } = supabase.storage
+    .from('wedding-media')
+    .getPublicUrl(filePath);
+
+  return publicData.publicUrl;
 }
 
 
@@ -115,6 +113,13 @@ export async function fetchPhotos(page = 0, pageSize = 30) {
     const from = page * pageSize;
     const to = from + pageSize - 1;
 
+    // Fetch all guests first to build a map
+    const { data: guests } = await supabase
+      .from('guests')
+      .select('full_name, gender');
+
+    const genderMap = new Map(guests?.map(g => [g.full_name, g.gender]) || []);
+
     const { data, error } = await supabase
       .from('photos')
       .select('*')
@@ -122,7 +127,14 @@ export async function fetchPhotos(page = 0, pageSize = 30) {
       .range(from, to);
 
     if (error) throw error;
-    return data || [];
+
+    // Enrich photos with gender from the map
+    const photosWithGender = (data || []).map((photo) => ({
+      ...photo,
+      gender: photo.created_by ? genderMap.get(photo.created_by) || 'H' : 'H'
+    }));
+
+    return photosWithGender || [];
   } catch (error) {
     if (__DEV__) console.error('[Photo] Fetch error:', error);
     return [];
@@ -184,13 +196,6 @@ function nameToEmail(fullName: string): string {
     .replace(/\s/g, '.');
 
   const email = `${sanitized}@wedding.local`;
-
-  // Redirection du compte corrompu vers le compte réparé
-  // Le compte camille.peres@wedding.local a une erreur DB côté Supabase Auth (500)
-  // Le compte fonctionnel est camille.peres.fix@wedding.local
-  if (email === 'camille.peres@wedding.local') {
-    return 'camille.peres.fix@wedding.local';
-  }
 
   return email;
 }
@@ -460,5 +465,98 @@ export async function reportContent(
   } catch (error) {
     if (__DEV__) console.error('[Moderation] Report error:', error);
     throw new Error('Erreur lors du signalement. Veuillez réessayer.');
+  }
+}
+
+// --- Comments ---
+
+export type Comment = {
+  id: number;
+  photo_id: string;
+  created_by: string;
+  content: string;
+  created_at: string;
+};
+
+export async function fetchComments(photoId: string): Promise<Comment[]> {
+  try {
+    const { data, error } = await supabase
+      .from('comments')
+      .select('*')
+      .eq('photo_id', photoId)
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    if (__DEV__) console.error('[Comments] Fetch error:', error);
+    return [];
+  }
+}
+
+export async function addComment(photoId: string, createdBy: string, content: string): Promise<Comment | null> {
+  try {
+    const { data, error } = await supabase
+      .from('comments')
+      .insert({ photo_id: photoId, created_by: createdBy, content: content.trim() })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    if (__DEV__) console.error('[Comments] Add error:', error);
+    throw error;
+  }
+}
+
+export async function deleteComment(commentId: number): Promise<void> {
+  try {
+    const { error } = await supabase.from('comments').delete().eq('id', commentId);
+    if (error) throw error;
+  } catch (error) {
+    if (__DEV__) console.error('[Comments] Delete error:', error);
+    throw error;
+  }
+}
+
+export async function fetchGuests(): Promise<string[]> {
+  try {
+    const { data, error } = await supabase.from('guests').select('full_name');
+    if (error) throw error;
+    return (data || []).map((g: { full_name: string }) => g.full_name);
+  } catch (error) {
+    if (__DEV__) console.error('[Guests] Fetch error:', error);
+    return [];
+  }
+}
+
+// --- Gender management ---
+
+export async function updateGuestGender(userId: string, gender: 'H' | 'F' | 'MA' | 'FA'): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('guests')
+      .update({ gender })
+      .eq('user_id', userId);
+
+    if (error) throw error;
+    if (__DEV__) console.log('[Guest] Gender updated:', userId, gender);
+  } catch (error) {
+    if (__DEV__) console.error('[Guest] Gender update error:', error);
+    throw error;
+  }
+}
+
+export async function fetchGuestGender(fullName: string): Promise<'H' | 'F' | 'MA' | 'FA' | undefined> {
+  try {
+    const { data } = await supabase
+      .from('guests')
+      .select('gender')
+      .eq('full_name', fullName)
+      .single();
+
+    return data?.gender || undefined;
+  } catch (error) {
+    if (__DEV__) console.warn('[Guest] Gender fetch failed, using default:', fullName);
+    return undefined;
   }
 }

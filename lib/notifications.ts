@@ -142,6 +142,52 @@ export async function sendLikeNotification(
 }
 
 /**
+ * Envoyer une notification push aux personnes mentionnées dans un commentaire
+ * Fire-and-forget
+ */
+export async function sendMentionNotification(
+    mentionedNames: string[],
+    authorName: string,
+    commentContent: string
+): Promise<void> {
+    if (!mentionedNames.length || !authorName) return;
+
+    try {
+        const { supabase } = await import('./supabase');
+
+        // Récupérer les tokens de toutes les personnes mentionnées en une requête
+        const { data: guests } = await supabase
+            .from('guests')
+            .select('full_name, push_token')
+            .in('full_name', mentionedNames);
+
+        if (!guests?.length) return;
+
+        const messages = guests
+            .filter(g => g.push_token && g.full_name !== authorName)
+            .map(g => ({
+                to: g.push_token,
+                title: `💬 ${authorName} vous a mentionné`,
+                body: commentContent.length > 80 ? commentContent.slice(0, 80) + '…' : commentContent,
+                sound: 'default',
+                priority: 'high',
+            }));
+
+        if (!messages.length) return;
+
+        await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify(messages),
+        });
+
+        if (__DEV__) console.log('[Notif] Mention notifications sent to', messages.map(m => m.to));
+    } catch (err) {
+        if (__DEV__) console.warn('[Notif] Mention notification error:', err);
+    }
+}
+
+/**
  * Supprimer le token push (déconnexion)
  */
 export async function removePushToken(userId: string): Promise<void> {

@@ -2,6 +2,53 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Ajout d'un invité (Supabase)
+
+Toujours créer les **3 entrées** dans cet ordre via `mcp__plugin_supabase_supabase__execute_sql` (project_id: `sxdgvuqawjehfjexziwu`) :
+
+```sql
+-- 1. Créer l'utilisateur auth
+INSERT INTO auth.users (id, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, role)
+VALUES (
+  gen_random_uuid(),
+  'prenom.nom@wedding.local',
+  crypt('MotDePasse', gen_salt('bf')),
+  now(), now(), now(),
+  '{"provider":"email","providers":["email"]}',
+  '{}',
+  'authenticated'
+);
+
+-- 2. Créer l'identité (OBLIGATOIRE, sinon le login échoue)
+INSERT INTO auth.identities (id, user_id, provider_id, provider, identity_data, created_at, updated_at, last_sign_in_at)
+VALUES (
+  gen_random_uuid(),
+  (SELECT id FROM auth.users WHERE email = 'prenom.nom@wedding.local'),
+  (SELECT id FROM auth.users WHERE email = 'prenom.nom@wedding.local'),
+  'email',
+  jsonb_build_object('sub', (SELECT id::text FROM auth.users WHERE email = 'prenom.nom@wedding.local'), 'email', 'prenom.nom@wedding.local', 'email_verified', false, 'phone_verified', false),
+  now(), now(), now()
+);
+
+-- 3. Créer le profil invité
+INSERT INTO public.guests (user_id, full_name, password, gender)
+VALUES (
+  (SELECT id FROM auth.users WHERE email = 'prenom.nom@wedding.local'),
+  'Prénom',
+  'MotDePasse',
+  'F' -- ou 'M'
+);
+```
+
+**Convention email :** `prenom.nom@wedding.local` (accents normalisés, espaces → points).
+**Vérification post-création :**
+```sql
+SELECT au.email, (SELECT COUNT(*) FROM auth.identities WHERE user_id = au.id) AS identity_count, g.full_name
+FROM auth.users au JOIN public.guests g ON g.user_id = au.id
+WHERE au.email = 'prenom.nom@wedding.local';
+```
+`identity_count` doit être `1`. Si `0`, le login échouera.
+
 ## MCP Servers
 
 Pour toute demande en rapport avec **GitHub** ou **n8n**, les informations de connexion (URLs, clés API, tokens) sont centralisées dans le fichier `~/.claude/settings.json` sous la clé `mcpServers`. Toujours s'y référer pour récupérer les credentials et configurations de ces services.

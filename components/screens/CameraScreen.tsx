@@ -7,7 +7,7 @@ import { ResizeMode, Video } from 'expo-av';
 import { Camera, CameraView, FlashMode } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
 // MediaLibrary import removed - not needed, causes Expo Go Android issues
-import { ArrowRight, Camera as CameraIcon, Heart, LogOut, RefreshCw, Sparkles, Video as VideoIcon, X, Zap } from 'lucide-react-native';
+import { ArrowRight, Camera as CameraIcon, Heart, RefreshCw, Sparkles, Video as VideoIcon, X, Zap } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 
 import {
@@ -25,7 +25,7 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
-    useAnimatedProps,
+    runOnJS,
     useAnimatedStyle,
     useSharedValue,
     withSequence,
@@ -119,13 +119,6 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
         })();
     }, []);
 
-    // 🔓 BOUTON DE DÉCONNEXION DEBUG
-    const handleLogout = async () => {
-        await AsyncStorage.removeItem("wedding_logged_in");
-        if (__DEV__) console.log("AsyncStorage cleared");
-        router.replace("/welcome");
-    };
-
     useEffect(() => {
         (async () => {
             const { status: cameraStatus } = await Camera.requestCameraPermissionsAsync();
@@ -168,27 +161,21 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
     };
 
     const [flashMode, setFlashMode] = useState<FlashMode>('off');
-    // REMOVED: const [zoom, setZoom] = useState(0); -> Now using shared value completely
+    const [zoomLevel, setZoomLevel] = useState(0);
 
     // Zoom Handling
-    const zoom = useSharedValue(0); // Actual zoom value
-    const startZoom = useSharedValue(0); // Zoom value at start of gesture
+    const zoom = useSharedValue(0);
+    const startZoom = useSharedValue(0);
 
     const pinch = Gesture.Pinch()
         .onStart(() => {
             startZoom.value = zoom.value;
         })
         .onUpdate((event) => {
-            // "Snapchat-like" linear feel: Additive scale often feels better for 0-1 range
-            // but let's try a slightly more sensitive approach if needed.
-            // Standard linear mapping:
-            const newZoom = startZoom.value + (event.scale - 1) * 0.15; // Added multiplier for sensitivity
+            const newZoom = startZoom.value + (event.scale - 1) * 0.15;
             zoom.value = Math.max(0, Math.min(newZoom, 1));
+            runOnJS(setZoomLevel)(zoom.value);
         });
-
-    const animatedCameraProps = useAnimatedProps(() => ({
-        zoom: zoom.value
-    }));
 
 
     // Focus Handling
@@ -332,13 +319,15 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
     const handleSend = async () => {
         if (!capturedPhotoUri) return;
 
-        // Get current user name
+        // Get current user name and gender
         let currentUserName = 'Moi';
+        let currentUserGender: string | undefined;
         try {
             const userInfo = await AsyncStorage.getItem('wedding_user_info');
             if (userInfo) {
                 const user = JSON.parse(userInfo);
                 if (user.full_name) currentUserName = user.full_name;
+                if (user.gender) currentUserGender = user.gender;
             }
         } catch (e) {
             if (__DEV__) console.log('Erreur lecture user info:', e);
@@ -360,6 +349,7 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
             created_by: currentUserName,
             is_optimistic: true,
             caption: trimmedCaption,
+            gender: currentUserGender,
         });
 
         // Upload in background
@@ -501,17 +491,12 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
 
     return (
         <View style={styles.container}>
-            {/* 🔓 BOUTON DEBUG */}
-            <TouchableOpacity onPress={handleLogout} style={[styles.logoutButton, { top: insets.top + 10 }]}>
-                <LogOut color="white" size={24} />
-            </TouchableOpacity>
-
             {/* ⚡ BOUTON FLASH */}
-            <TouchableOpacity onPress={toggleFlash} style={[styles.flashButton, { top: insets.top + 10 }]}>
+            <TouchableOpacity onPress={toggleFlash} style={[styles.flashButton, { top: insets.top + 60 }]}>
                 <Zap
-                    color={flashMode === 'off' ? 'rgba(255, 255, 255, 0.6)' : 'white'}
+                    color="white"
                     size={24}
-                    fill={flashMode === 'on' ? '#FCD34D' : 'transparent'}
+                    fill={flashMode === 'on' ? 'white' : 'transparent'}
                 />
                 {flashMode === 'auto' && (
                     <Text style={styles.flashAutoText}>A</Text>
@@ -545,6 +530,7 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
                             facing={facing}
                             mode="video"
                             flash={flashMode}
+                            zoom={zoomLevel}
                             onCameraReady={() => setIsCameraReady(true)}
                         />
                         {/* Manual Focus Indicator */}
@@ -916,34 +902,33 @@ const styles = StyleSheet.create({
     },
     logoutButton: {
         position: 'absolute',
-        top: 60, // Aligné avec le header
+        top: 60,
         right: 24,
         zIndex: 50,
         width: 40,
         height: 40,
         justifyContent: 'center',
         alignItems: 'center',
-        // Ombre portée pour lisibilité vidéo
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.5,
-        shadowRadius: 2,
-        elevation: 3,
+        shadowColor: '#ffffff',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.9,
+        shadowRadius: 8,
+        elevation: 6,
     },
     flashButton: {
         position: 'absolute',
         top: 60,
-        left: 24,
+        right: 24,
         zIndex: 50,
         width: 40,
         height: 40,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.5,
-        shadowRadius: 2,
-        elevation: 3,
+        shadowColor: '#ffffff',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.9,
+        shadowRadius: 8,
+        elevation: 6,
     },
     flashAutoText: {
         position: 'absolute',
@@ -1013,10 +998,10 @@ const styles = StyleSheet.create({
         zIndex: 15,
     },
     frameCorner: { position: 'absolute', width: 48, height: 48 },
-    frameCornerTL: { top: 0, left: 0, borderTopWidth: 2, borderLeftWidth: 2, borderColor: 'rgba(251, 182, 206, 0.5)', borderTopLeftRadius: 24 },
-    frameCornerTR: { top: 0, right: 0, borderTopWidth: 2, borderRightWidth: 2, borderColor: 'rgba(251, 182, 206, 0.5)', borderTopRightRadius: 24 },
-    frameCornerBL: { bottom: 120, left: 0, borderBottomWidth: 2, borderLeftWidth: 2, borderColor: 'rgba(196, 181, 253, 0.5)', borderBottomLeftRadius: 24 },
-    frameCornerBR: { bottom: 120, right: 0, borderBottomWidth: 2, borderRightWidth: 2, borderColor: 'rgba(196, 181, 253, 0.5)', borderBottomRightRadius: 24 },
+    frameCornerTL: { top: 0, left: 0, borderTopWidth: 2, borderLeftWidth: 2, borderColor: '#d1fbfa', borderTopLeftRadius: 24 },
+    frameCornerTR: { top: 0, right: 0, borderTopWidth: 2, borderRightWidth: 2, borderColor: '#ffddfd', borderTopRightRadius: 24 },
+    frameCornerBL: { bottom: 120, left: 0, borderBottomWidth: 2, borderLeftWidth: 2, borderColor: '#ffddfd', borderBottomLeftRadius: 24 },
+    frameCornerBR: { bottom: 120, right: 0, borderBottomWidth: 2, borderRightWidth: 2, borderColor: '#d1fbfa', borderBottomRightRadius: 24 },
 
     flashOverlay: {
         position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
@@ -1150,7 +1135,7 @@ const styles = StyleSheet.create({
         right: 0,
         zIndex: 60,
         flexDirection: 'row',
-        alignItems: 'flex-end',
+        alignItems: 'center',
         paddingHorizontal: scale(24),
         gap: 12,
     },

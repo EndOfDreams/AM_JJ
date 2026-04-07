@@ -1,7 +1,8 @@
 // app/(tabs)/feed.tsx - ULTRA PREMIUM VERSION
 import { PremiumHeader } from '@/components/ui/PremiumHeader';
 import { sendLikeNotification } from '@/lib/notifications';
-import { deleteAccount, deletePhoto, fetchUserLikes, reportContent, signOut, supabase } from '@/lib/supabase';
+import { deleteAccount, deletePhoto, fetchGuestGender, fetchPhotos, fetchUserLikes, reportContent, signOut, supabase } from '@/lib/supabase';
+import CommentSheet from '@/components/screens/CommentSheet';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { ResizeMode, Video } from 'expo-av';
@@ -16,12 +17,12 @@ import * as Sharing from 'expo-sharing';
 import {
     AlertTriangle,
     BadgeCheck,
-    Bookmark,
     Clock,
     Copy,
     Crown,
     Download,
     Heart,
+    MessageCircle,
     ImageOff,
     LogOut,
     Mail,
@@ -67,10 +68,26 @@ interface Photo {
     image_url: string;
     media_type: 'photo' | 'video';
     likes: number;
+    comments_count?: number;
     created_at: string;
     created_by?: string;
     caption?: string;
+    gender?: 'H' | 'F' | 'MA' | 'FA';
 }
+
+const getGenderEmoji = (gender?: string): string => {
+    switch (gender) {
+        case 'F':
+            return '👩';
+        case 'MA':
+            return '🤵';
+        case 'FA':
+            return '👰';
+        case 'H':
+        default:
+            return '👨';
+    }
+};
 
 // Shimmer Loading Effect
 const ShimmerEffect: React.FC<{ style: ViewStyle }> = ({ style }) => {
@@ -441,11 +458,12 @@ const PremiumPostCard: React.FC<{
     isNew?: boolean;
     onAnimationComplete?: () => void;
     index: number;
-    isBookmarked?: boolean;
-    onBookmark?: () => void;
     isVideoPlaying?: boolean;
     hasLiked?: boolean;
-}> = ({ photo, currentUser, onLike, onPress, onDelete, isNew = false, onAnimationComplete, index, isBookmarked = false, onBookmark, isVideoPlaying = false, hasLiked = false }) => {
+    onComment?: () => void;
+    commentsCount?: number;
+    isOptimistic?: boolean;
+}> = ({ photo, currentUser, onLike, onPress, onDelete, isNew = false, onAnimationComplete, index, isVideoPlaying = false, hasLiked = false, onComment, commentsCount = 0, isOptimistic = false }) => {
     const [isImageLoaded, setIsImageLoaded] = useState(false);
     const [isSharing, setIsSharing] = useState(false);
     const [showConfetti, setShowConfetti] = useState(isNew);
@@ -586,9 +604,19 @@ const PremiumPostCard: React.FC<{
         }
     };
 
-    const handleBookmark = () => {
-        Haptics.selectionAsync();
-        if (onBookmark) onBookmark();
+    const handleDownload = async () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        try {
+            const { status } = await MediaLibrary.requestPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission requise', "Autorise l'accès à ta galerie pour enregistrer.");
+                return;
+            }
+            await MediaLibrary.saveToLibraryAsync(photo.image_url);
+            Alert.alert('Enregistré !', 'Photo sauvegardée dans ta galerie.');
+        } catch (e) {
+            Alert.alert('Erreur', "Impossible d'enregistrer la photo.");
+        }
     };
 
     return (
@@ -619,16 +647,16 @@ const PremiumPostCard: React.FC<{
             <View style={styles.postHeader}>
                 <View style={styles.postHeaderLeft}>
                     <LinearGradient
-                        colors={['#F9A8D4', '#D8B4FE']}
+                        colors={photo.gender === 'H' || photo.gender === 'MA'
+                            ? ['#BFDBFE', '#93C5FD']
+                            : ['#F9A8D4', '#D8B4FE']}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                         style={styles.avatar}
                     >
-                        {photo.created_by?.includes('Camille') ? (
-                            <Text style={{ fontSize: 16 }}>👨</Text>
-                        ) : (
-                            <User size={20} color="white" />
-                        )}
+                        <Text style={{ fontSize: 16 }}>
+                            {getGenderEmoji(photo.gender)}
+                        </Text>
                     </LinearGradient>
                     <View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -733,15 +761,17 @@ const PremiumPostCard: React.FC<{
                             <Share2 size={28} color="#1F2937" strokeWidth={2} />
                         )}
                     </ScaleButton>
+
+                    <ScaleButton onPress={onComment} style={[styles.actionButton, isOptimistic && { opacity: 0.35 }]} disabled={isOptimistic}>
+                        <MessageCircle size={26} color="#1F2937" strokeWidth={2} />
+                        {commentsCount > 0 && (
+                            <Text style={styles.actionCount}>{commentsCount}</Text>
+                        )}
+                    </ScaleButton>
                 </View>
 
-                <ScaleButton onPress={handleBookmark} style={styles.actionButton}>
-                    <Bookmark
-                        size={24}
-                        color={isBookmarked ? '#DB2777' : '#1F2937'}
-                        fill={isBookmarked ? '#DB2777' : 'transparent'}
-                        strokeWidth={2}
-                    />
+                <ScaleButton onPress={handleDownload} style={styles.actionButton}>
+                    <Download size={24} color="#1F2937" strokeWidth={2} />
                 </ScaleButton>
             </View>
 
@@ -1079,6 +1109,7 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
     const [likedPhotoIds, setLikedPhotoIds] = useState<Set<string>>(new Set());
     const photosRef = useRef<Photo[]>([]);
     const pendingOptimisticLikesRef = useRef(new Set<string>());
+    const likeInProgressRef = useRef(new Set<string>());
     const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
     const [seenPhotoIds, setSeenPhotoIds] = useState<Set<string>>(new Set());
     const [newPhotoIds, setNewPhotoIds] = useState<Set<string>>(new Set());
@@ -1101,6 +1132,8 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
         }
         setVisibleVideoIds(videoIds);
     }, []);
+    const [commentSheetPhotoId, setCommentSheetPhotoId] = useState<string | null>(null);
+    const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
     const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
     const [isDownloadingAll, setIsDownloadingAll] = useState(false);
     const [downloadProgress, setDownloadProgress] = useState({ current: 0, total: 0 });
@@ -1157,11 +1190,10 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
         DeviceEventEmitter.emit('feed.unseenCount', newPhotoIds.size);
     }, [newPhotoIds]);
 
-    // Mark all photos as seen when user LEAVES the feed (badge resets after viewing)
+    // Mark all photos as seen when user ARRIVES on the feed
     const prevFocusedRef = useRef(isFocused);
     useEffect(() => {
-        if (prevFocusedRef.current && !isFocused && newPhotoIds.size > 0) {
-            // User just left the feed — mark everything as seen
+        if (!prevFocusedRef.current && isFocused && newPhotoIds.size > 0) {
             const allSeen = new Set(seenPhotoIds);
             newPhotoIds.forEach(id => allSeen.add(id));
             setSeenPhotoIds(allSeen);
@@ -1177,8 +1209,15 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
             .on(
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'photos' },
-                (payload) => {
-                    const newPhoto = payload.new as Photo;
+                async (payload) => {
+                    let newPhoto = payload.new as Photo;
+
+                    // Fetch gender for the user
+                    if (newPhoto.created_by) {
+                        const gender = await fetchGuestGender(newPhoto.created_by);
+                        newPhoto = { ...newPhoto, gender };
+                    }
+
                     let incrementCount = true;
 
                     // Check BEFORE setPhotos (using photosRef which is always current) whether
@@ -1439,26 +1478,23 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
         setCurrentPage(0);
         setHasMorePhotos(true);
 
-        const [countRes, dataRes] = await Promise.all([
+        const [countRes, loadedPhotos] = await Promise.all([
             supabase.from('photos').select('*', { count: 'exact', head: true }),
-            supabase.from('photos').select('*').order('created_at', { ascending: false }).range(0, PAGE_SIZE - 1),
+            fetchPhotos(0, PAGE_SIZE),
         ]);
 
         if (countRes.count !== null) setTotalCount(countRes.count);
-        if (dataRes.data) {
-            const loadedPhotos = dataRes.data as Photo[];
-            setPhotos(loadedPhotos);
-            setHasMorePhotos(loadedPhotos.length === PAGE_SIZE);
+        setPhotos(loadedPhotos);
+        setHasMorePhotos(loadedPhotos.length === PAGE_SIZE);
 
-            const idsToCheck = seenIds || seenPhotoIds;
-            const newIds = new Set<string>();
-            loadedPhotos.forEach(photo => {
-                if (!idsToCheck.has(photo.id)) {
-                    newIds.add(photo.id);
-                }
-            });
-            setNewPhotoIds(newIds);
-        }
+        const idsToCheck = seenIds || seenPhotoIds;
+        const newIds = new Set<string>();
+        loadedPhotos.forEach(photo => {
+            if (!idsToCheck.has(photo.id)) {
+                newIds.add(photo.id);
+            }
+        });
+        setNewPhotoIds(newIds);
 
         setIsLoading(false);
         setRefreshing(false);
@@ -1472,13 +1508,9 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
         const from = nextPage * PAGE_SIZE;
         const to = from + PAGE_SIZE - 1;
 
-        const { data } = await supabase
-            .from('photos')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .range(from, to);
+        const data = await fetchPhotos(nextPage, PAGE_SIZE);
 
-        if (data && data.length > 0) {
+        if (data.length > 0) {
             setPhotos(prev => {
                 const existingIds = new Set(prev.map(p => p.id));
                 const newPhotos = data.filter((p: Photo) => !existingIds.has(p.id));
@@ -1499,6 +1531,8 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
     };
 
     const toggleLike = async (photo: Photo) => {
+        if (likeInProgressRef.current.has(photo.id)) return;
+        likeInProgressRef.current.add(photo.id);
         try {
             const userEmail = currentUserEmailRef.current || currentUserEmail || currentUser || 'anonymous';
             const alreadyLiked = likedPhotoIds.has(photo.id);
@@ -1559,6 +1593,8 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
                 p.id === photo.id ? { ...p, likes: photo.likes } : p
             ));
             if (__DEV__) console.error(error);
+        } finally {
+            likeInProgressRef.current.delete(photo.id);
         }
     };
 
@@ -1580,6 +1616,9 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
                             // Retirer immédiatement de la liste (optimistic)
                             setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
                             setTotalCount((prev) => Math.max(0, prev - 1));
+
+                            // Photo encore en cours d'envoi (ID temporaire) → pas d'appel serveur
+                            if (photo.id.toString().startsWith('temp-')) return;
 
                             await deletePhoto(
                                 photo.id,
@@ -1612,10 +1651,11 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
             isNew={isFocused && newPhotoIds.has(item.id)}
             onAnimationComplete={() => {}}
             index={index}
-            isBookmarked={bookmarkedIds.has(item.id)}
-            onBookmark={() => toggleBookmark(item.id)}
             isVideoPlaying={isFocused && visibleVideoIds.has(item.id)}
             hasLiked={likedPhotoIds.has(item.id)}
+            isOptimistic={String(item.id).startsWith('temp-')}
+            onComment={() => setCommentSheetPhotoId(String(item.id))}
+            commentsCount={commentCounts[item.id] ?? (item.comments_count || 0)}
         />
     );
 
@@ -1811,6 +1851,19 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
                 />
             )}
 
+            {/* Comment Sheet */}
+            <CommentSheet
+                visible={commentSheetPhotoId !== null}
+                onClose={() => setCommentSheetPhotoId(null)}
+                photoId={commentSheetPhotoId ?? ''}
+                currentUser={currentUser ?? ''}
+                onCommentCountChange={(count) => {
+                    if (commentSheetPhotoId) {
+                        setCommentCounts(prev => ({ ...prev, [commentSheetPhotoId]: count }));
+                    }
+                }}
+            />
+
             {/* Download Progress Overlay */}
             {isDownloadingAll && (
                 <View style={styles.downloadOverlay}>
@@ -1878,7 +1931,7 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
                                     <TouchableOpacity
                                         style={styles.settingsOption}
                                         onPress={() => {
-                                            Linking.openURL('mailto:contact@wedsnap.app?subject=Support WedSnap');
+                                            Linking.openURL('mailto:camille.peres25@gmail.com?subject=Support WedSnap');
                                         }}
                                     >
                                         <Mail color="#3B82F6" size={20} />
@@ -2161,6 +2214,16 @@ const styles = StyleSheet.create({
     },
     actionButton: {
         padding: 4,
+        alignItems: 'center',
+        height: 48,
+        justifyContent: 'center',
+    },
+    actionCount: {
+        position: 'absolute',
+        bottom: 0,
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#6B7280',
     },
     likesSection: {
         paddingHorizontal: 16,

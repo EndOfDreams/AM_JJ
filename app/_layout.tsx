@@ -5,6 +5,7 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import React, { Component, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { configureNotificationHandler, setupNotificationChannels } from '@/lib/notifications';
 
 // STORE_COMPLIANCE: Error Boundary to catch rendering errors and prevent crashes
@@ -246,13 +247,15 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <Stack screenOptions={{
-          headerShown: false,
-          animation: "none",
-        }}>
-          <Stack.Screen name="welcome" />
-          <Stack.Screen name="index" />
-        </Stack>
+        <BottomSheetModalProvider>
+          <Stack screenOptions={{
+            headerShown: false,
+            animation: "none",
+          }}>
+            <Stack.Screen name="welcome" />
+            <Stack.Screen name="index" />
+          </Stack>
+        </BottomSheetModalProvider>
       </GestureHandlerRootView>
     </ErrorBoundary>
   );

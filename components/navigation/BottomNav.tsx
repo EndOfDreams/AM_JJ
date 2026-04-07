@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(251, 207, 232, 0.5)',
     paddingHorizontal: NAV_PADDING_H,
-    paddingVertical: 8,
+    paddingVertical: 4,
   },
   navContent: {
     flexDirection: 'row',
@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     color: '#9CA3AF',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   navLabelActive: {
     color: '#DB2777',
