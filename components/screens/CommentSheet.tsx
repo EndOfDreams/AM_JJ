@@ -65,6 +65,7 @@ type Props = {
     photoId: string;
     currentUser: string;
     onCommentCountChange?: (count: number) => void;
+    onCommentQueued?: (text: string) => void;
 };
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -75,6 +76,7 @@ export default function CommentSheet({
     photoId,
     currentUser,
     onCommentCountChange,
+    onCommentQueued,
 }: Props) {
     const insets = useSafeAreaInsets();
     const sheetRef = useRef<BottomSheetModal>(null);
@@ -108,7 +110,7 @@ export default function CommentSheet({
     // ── Data ────────────────────────────────────────────────────────────────
 
     const load = async () => {
-        if (photoId.startsWith('temp-')) return;
+        if (photoId.startsWith('temp-')) { setLoading(false); return; }
         setLoading(true);
         const data = await fetchComments(photoId);
         setComments(data);
@@ -169,7 +171,25 @@ export default function CommentSheet({
 
     const handleSend = async () => {
         const trimmed = input.trim();
-        if (!trimmed || sending || photoId.startsWith('temp-')) return;
+        if (!trimmed || sending) return;
+
+        if (photoId.startsWith('temp-')) {
+            const optimisticComment: Comment = {
+                id: Date.now() as unknown as number,
+                photo_id: photoId,
+                created_by: currentUser,
+                content: trimmed,
+                created_at: new Date().toISOString(),
+            };
+            const updated = [...comments, optimisticComment];
+            setComments(updated);
+            onCommentCountChange?.(updated.length);
+            onCommentQueued?.(trimmed);
+            setInput('');
+            setMentionQuery(null);
+            return;
+        }
+
         setSending(true);
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         try {

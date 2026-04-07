@@ -1,7 +1,7 @@
 // app/(tabs)/feed.tsx - ULTRA PREMIUM VERSION
 import { PremiumHeader } from '@/components/ui/PremiumHeader';
 import { sendLikeNotification } from '@/lib/notifications';
-import { deleteAccount, deletePhoto, fetchGuestGender, fetchPhotos, fetchUserLikes, reportContent, signOut, supabase } from '@/lib/supabase';
+import { addComment, deleteAccount, deletePhoto, fetchGuestGender, fetchPhotos, fetchUserLikes, reportContent, signOut, supabase } from '@/lib/supabase';
 import CommentSheet from '@/components/screens/CommentSheet';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
@@ -762,7 +762,10 @@ const PremiumPostCard: React.FC<{
                         )}
                     </ScaleButton>
 
-                    <ScaleButton onPress={onComment} style={[styles.actionButton, isOptimistic && { opacity: 0.35 }]} disabled={isOptimistic}>
+                    <ScaleButton
+                        onPress={isOptimistic ? () => Alert.alert('', 'La photo est encore en cours d\'envoi, réessaie dans quelques secondes 📤') : onComment}
+                        style={styles.actionButton}
+                    >
                         <MessageCircle size={26} color="#1F2937" strokeWidth={2} />
                         {commentsCount > 0 && (
                             <Text style={styles.actionCount}>{commentsCount}</Text>
@@ -1133,6 +1136,9 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
         setVisibleVideoIds(videoIds);
     }, []);
     const [commentSheetPhotoId, setCommentSheetPhotoId] = useState<string | null>(null);
+    const pendingCommentsRef = useRef<Map<string, Array<{text: string, author: string}>>>(new Map());
+    const commentSheetPhotoIdRef = useRef<string | null>(null);
+    const pendingReplacementRef = useRef<{ tempId: string, realId: string } | null>(null);
     const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
     const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
     const [isDownloadingAll, setIsDownloadingAll] = useState(false);
@@ -1183,6 +1189,28 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
     // Keep photosRef in sync so realtime callbacks (stale closures) can read current photos
     useEffect(() => {
         photosRef.current = photos;
+    }, [photos]);
+
+    // Keep commentSheetPhotoIdRef in sync
+    useEffect(() => {
+        commentSheetPhotoIdRef.current = commentSheetPhotoId;
+    }, [commentSheetPhotoId]);
+
+    // Post queued comments and update sheet ID when optimistic photo is replaced
+    useEffect(() => {
+        if (!pendingReplacementRef.current) return;
+        const { tempId, realId } = pendingReplacementRef.current;
+        pendingReplacementRef.current = null;
+
+        const queued = pendingCommentsRef.current.get(tempId);
+        if (queued?.length) {
+            pendingCommentsRef.current.delete(tempId);
+            queued.forEach(({ text, author }) => addComment(realId, author, text).catch(() => {}));
+        }
+
+        if (commentSheetPhotoIdRef.current === tempId) {
+            setCommentSheetPhotoId(realId);
+        }
     }, [photos]);
 
     // A1: Emit unseen photo count for BottomNav badge
@@ -1239,6 +1267,10 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
 
                         if (optimisticIndex !== -1 && optimisticIndex < 3) {
                             const newPhotos = [...prev];
+                            pendingReplacementRef.current = {
+                                tempId: String(newPhotos[optimisticIndex].id),
+                                realId: String(newPhoto.id),
+                            };
                             newPhotos[optimisticIndex] = newPhoto;
                             incrementCount = false;
                             return newPhotos;
@@ -1861,6 +1893,11 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
                     if (commentSheetPhotoId) {
                         setCommentCounts(prev => ({ ...prev, [commentSheetPhotoId]: count }));
                     }
+                }}
+                onCommentQueued={(text) => {
+                    const key = commentSheetPhotoId ?? '';
+                    const existing = pendingCommentsRef.current.get(key) ?? [];
+                    pendingCommentsRef.current.set(key, [...existing, { text, author: currentUser ?? '' }]);
                 }}
             />
 
