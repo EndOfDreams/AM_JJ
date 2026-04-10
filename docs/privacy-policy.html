@@ -50,7 +50,7 @@
 <body>
     <div class="container">
         <h1>Politique de Confidentialité</h1>
-        <p class="update-date">Dernière mise à jour : 26 février 2026</p>
+        <p class="update-date">Dernière mise à jour : 10 avril 2026</p>
 
         <h2>1. Introduction</h2>
         <p>
@@ -69,8 +69,10 @@
         <p>Nous collectons et traitons les données suivantes :</p>
         <ul>
             <li><strong>Nom complet</strong> : Pour identifier les invités et personnaliser l'expérience</li>
-            <li><strong>Adresse email</strong> : Convertie automatiquement à partir du nom pour l'authentification (format : prenom.nom@wedding.local)</li>
-            <li><strong>Photos et vidéos</strong> : Médias que vous capturez et partagez avec les autres invités</li>
+            <li><strong>Adresse email</strong> : Dérivée automatiquement du nom pour l'authentification (format interne : prenom.nom@wedding.local)</li>
+            <li><strong>Genre</strong> : Indicatif (homme, femme, marié(e)) pour personnaliser l'affichage dans l'application</li>
+            <li><strong>Photos et vidéos</strong> : Médias que vous capturez via la caméra de votre appareil (avec microphone pour les vidéos) et partagez avec les autres invités</li>
+            <li><strong>Commentaires</strong> : Textes que vous rédigez sous les photos et vidéos partagées</li>
             <li><strong>Interactions</strong> : Likes sur les photos et vidéos partagées</li>
             <li><strong>Token de notification push</strong> : Pour vous envoyer des notifications sur les événements du mariage</li>
         </ul>
@@ -81,7 +83,7 @@
             <li><strong>Authentification</strong> : Sécuriser l'accès à l'application réservée aux invités</li>
             <li><strong>Partage de médias</strong> : Permettre aux invités de capturer et partager des moments du mariage</li>
             <li><strong>Notifications</strong> : Vous informer des événements du planning (15 minutes avant chaque événement)</li>
-            <li><strong>Fonctionnalités sociales</strong> : Likes, commentaires et interactions entre invités</li>
+            <li><strong>Fonctionnalités sociales</strong> : Likes, commentaires et mentions entre invités</li>
         </ul>
 
         <h2>5. Stockage et Sécurité</h2>
@@ -91,8 +93,8 @@
         <ul>
             <li><strong>Localisation</strong> : Europe (conformité RGPD)</li>
             <li><strong>Chiffrement</strong> : TLS 1.3 pour toutes les communications</li>
-            <li><strong>Accès</strong> : Protégé par Row Level Security (RLS) - vous ne voyez que vos propres données</li>
-            <li><strong>Médias</strong> : Stockés dans Supabase Storage avec URLs publiques sécurisées</li>
+            <li><strong>Accès</strong> : Protégé par authentification — seuls les invités disposant d'un compte peuvent se connecter à l'application</li>
+            <li><strong>Médias</strong> : Stockés dans Supabase Storage ; les URLs des médias sont techniquement publiques (accessibles via un lien direct), mais non indexées et non diffusées en dehors de l'application</li>
         </ul>
 
         <h2>6. Partage des Données</h2>
@@ -102,24 +104,24 @@
         </p>
         <p><strong>Services tiers utilisés :</strong></p>
         <ul>
-            <li><strong>Supabase</strong> : Hébergement de la base de données et du stockage (conformité RGPD)</li>
-            <li><strong>Expo Push Notifications</strong> : Envoi des notifications push (infrastructure Expo)</li>
+            <li><strong>Supabase</strong> : Hébergement de la base de données et du stockage (conformité RGPD, serveurs en Europe)</li>
+            <li><strong>Expo Push Notifications</strong> : Envoi des notifications push (infrastructure Expo, serveurs aux États-Unis — seul le token de notification est transmis)</li>
         </ul>
 
         <h2>7. Durée de Conservation</h2>
         <ul>
             <li><strong>Pendant l'événement</strong> : Toutes les données sont conservées pour permettre le partage en temps réel</li>
             <li><strong>Après l'événement</strong> : Les données sont conservées jusqu'à ce que vous supprimiez votre compte ou que l'organisateur supprime l'événement</li>
-            <li><strong>Suppression automatique</strong> : Possibilité de supprimer votre compte à tout moment via les paramètres de l'app</li>
+            <li><strong>Suppression à la demande</strong> : Vous pouvez supprimer votre compte à tout moment via les paramètres de l'app (voir section 9)</li>
         </ul>
 
         <h2>8. Vos Droits</h2>
         <p>Conformément au RGPD, vous disposez des droits suivants :</p>
         <ul>
-            <li><strong>Droit d'accès</strong> : Consulter vos données à tout moment dans l'application</li>
-            <li><strong>Droit de rectification</strong> : Modifier vos informations personnelles</li>
+            <li><strong>Droit d'accès</strong> : Consulter vos photos et interactions directement dans l'application ; pour obtenir l'ensemble de vos données personnelles, contactez-nous par email</li>
+            <li><strong>Droit de rectification</strong> : Pour corriger vos informations personnelles (nom, genre), contactez-nous à camille.peres25@gmail.com</li>
             <li><strong>Droit à l'effacement</strong> : Supprimer votre compte via Paramètres > Supprimer mon compte</li>
-            <li><strong>Droit d'opposition</strong> : Refuser le traitement de certaines données (ex: notifications push)</li>
+            <li><strong>Droit d'opposition</strong> : Refuser le traitement de certaines données — les notifications push peuvent être désactivées à tout moment depuis les Réglages de votre iPhone (Réglages > Notifications > WedSnap)</li>
             <li><strong>Droit à la portabilité</strong> : Demander une copie de vos données par email</li>
         </ul>
         <p>
@@ -140,13 +142,14 @@
         <ul>
             <li>✅ Votre compte utilisateur sera supprimé</li>
             <li>✅ Votre nom sera remplacé par "Utilisateur supprimé" sur vos photos</li>
+            <li>✅ Vos commentaires seront supprimés</li>
             <li>✅ Vos likes seront retirés</li>
             <li>⚠️ Les photos que vous avez partagées resteront visibles (anonymisées)</li>
         </ul>
 
         <h2>10. Modération du Contenu (UGC)</h2>
         <p>
-            L'application permet aux utilisateurs de partager du contenu (photos/vidéos).
+            L'application permet aux utilisateurs de partager du contenu (photos, vidéos et commentaires).
             Pour signaler un contenu inapproprié :
         </p>
         <ol>
