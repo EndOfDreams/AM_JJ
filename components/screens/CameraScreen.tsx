@@ -119,18 +119,19 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
         })();
     }, []);
 
+    const permissionsRequested = useRef(false);
     useEffect(() => {
+        if (!isFocused || permissionsRequested.current) return;
+        permissionsRequested.current = true;
         (async () => {
             const { status: cameraStatus } = await Camera.requestCameraPermissionsAsync();
             const { status: audioStatus } = await Camera.requestMicrophonePermissionsAsync();
-            // MediaLibrary permission removed - not needed for Expo Go
-            // We upload to Supabase, not save to device gallery
             setHasPermission(
                 cameraStatus === 'granted' &&
                 audioStatus === 'granted'
             );
         })();
-    }, []);
+    }, [isFocused]);
 
     // Reset ready state when camera unmounts (not focused)
     useEffect(() => {
@@ -296,11 +297,12 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
         }
     };
 
-    const uploadPhotoInBackground = async (uri: string, userName: string, photoCaption?: string) => {
+    const uploadPhotoInBackground = async (uri: string, userName: string, photoCaption?: string, tempId?: string) => {
         try {
             const { uploadMedia, createPhotoEntry } = await import('@/lib/supabase');
             const imageUrl = await uploadMedia(uri, 'photo');
-            await createPhotoEntry(imageUrl, 'photo', userName, photoCaption);
+            const realId = await createPhotoEntry(imageUrl, 'photo', userName, photoCaption);
+            if (realId && tempId) DeviceEventEmitter.emit('media.uploaded', { tempId, realId });
             if (__DEV__) console.log('Photo uploadée avec succès par', userName);
         } catch (error) {
             if (__DEV__) console.error('Erreur upload background:', error);
@@ -340,8 +342,9 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
         showSuccessAnimation(isVideo ? 'Vidéo ajoutée au feed ! 🎬' : 'Photo ajoutée au feed ! ✨');
 
         // Add optimistic update to feed
+        const tempId = 'temp-' + Date.now();
         DeviceEventEmitter.emit('media.optimistic', {
-            id: 'temp-' + Date.now(),
+            id: tempId,
             image_url: capturedPhotoUri,
             media_type: capturedMediaType,
             likes: 0,
@@ -354,9 +357,9 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
 
         // Upload in background
         if (isVideo) {
-            uploadVideoInBackground(capturedPhotoUri, currentUserName, trimmedCaption);
+            uploadVideoInBackground(capturedPhotoUri, currentUserName, trimmedCaption, tempId);
         } else {
-            uploadPhotoInBackground(capturedPhotoUri, currentUserName, trimmedCaption);
+            uploadPhotoInBackground(capturedPhotoUri, currentUserName, trimmedCaption, tempId);
         }
 
         // Exit preview mode
@@ -427,11 +430,12 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
         }
     };
 
-    const uploadVideoInBackground = async (uri: string, userName: string, videoCaption?: string) => {
+    const uploadVideoInBackground = async (uri: string, userName: string, videoCaption?: string, tempId?: string) => {
         try {
             const { uploadMedia, createPhotoEntry } = await import('@/lib/supabase');
             const videoUrl = await uploadMedia(uri, 'video');
-            await createPhotoEntry(videoUrl, 'video', userName, videoCaption);
+            const realId = await createPhotoEntry(videoUrl, 'video', userName, videoCaption);
+            if (realId && tempId) DeviceEventEmitter.emit('media.uploaded', { tempId, realId });
             if (__DEV__) console.log('Vidéo uploadée avec succès par', userName);
         } catch (error) {
             if (__DEV__) console.error('Erreur upload vidéo:', error);

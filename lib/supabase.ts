@@ -83,7 +83,7 @@ export async function createPhotoEntry(
   mediaType: 'photo' | 'video',
   createdBy: string,
   caption?: string
-): Promise<void> {
+): Promise<string | null> {
   try {
     // Validation des données
     const validatedData = photoSchema.parse({
@@ -93,15 +93,16 @@ export async function createPhotoEntry(
       caption: caption || undefined,
     });
 
-    const { error } = await supabase.from('photos').insert({
+    const { data, error } = await supabase.from('photos').insert({
       image_url: validatedData.image_url,
       media_type: validatedData.media_type,
       likes: 0,
       created_by: validatedData.created_by,
       ...(validatedData.caption ? { caption: validatedData.caption } : {}),
-    });
+    }).select('id').single();
 
     if (error) throw error;
+    return data?.id as string ?? null;
   } catch (error) {
     if (__DEV__) console.error('[Photo] Create entry error:', error);
     throw error;

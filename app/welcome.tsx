@@ -23,7 +23,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { signIn } from "../lib/supabase";
+import { signIn, supabase } from "../lib/supabase";
 import { scale, verticalScale, moderateScale, SCREEN_WIDTH } from "../lib/responsive";
 
 const { width, height } = Dimensions.get("window");
@@ -255,7 +255,7 @@ export default function Welcome() {
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
-  const VALID_EVENT_CODES = ['AMJJ2024', 'DEMO2024'];
+  const [validEventCodes, setValidEventCodes] = useState<string[]>([]);
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [transitionPhase, setTransitionPhase] = useState<'none' | 'video'>('none');
   const whiteOverlayAnim = useRef(new Animated.Value(0)).current;
@@ -273,6 +273,12 @@ export default function Welcome() {
 
   // Border gradient animation
   const borderGradient = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    supabase.from('config').select('value').eq('key', 'event_code').single().then(({ data }) => {
+      if (data?.value) setValidEventCodes([data.value.toUpperCase()]);
+    });
+  }, []);
 
   useEffect(() => {
     // Sophisticated entrance
@@ -424,7 +430,7 @@ export default function Welcome() {
       return;
     }
 
-    if (!VALID_EVENT_CODES.includes(eventCode.trim().toUpperCase())) {
+    if (!validEventCodes.includes(eventCode.trim().toUpperCase())) {
       setErrorMessage("Code événement invalide");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Animated.sequence([

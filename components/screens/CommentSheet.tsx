@@ -286,8 +286,8 @@ export default function CommentSheet({
             ref={sheetRef}
             snapPoints={snapPoints}
             enableDynamicSizing={false}
-            keyboardBehavior="interactive"
-            keyboardBlurBehavior="none"
+            keyboardBehavior="fillParent"
+            keyboardBlurBehavior="restore"
             enablePanDownToClose
             backdropComponent={renderBackdrop}
             onDismiss={onClose}

@@ -4,19 +4,51 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Ajout d'un invité (Supabase)
 
-Toujours créer les **3 entrées** dans cet ordre via `mcp__plugin_supabase_supabase__execute_sql` (project_id: `sxdgvuqawjehfjexziwu`) :
+### Logique d'email OBLIGATOIRE
+
+L'email est **dérivé du `full_name`** par la fonction `nameToEmail()` dans `lib/supabase.ts` :
+- Minuscules + suppression accents (é→e, à→a) + espaces→points
+- Ex : `"Anne-Marie Cabanac"` → `anne-marie.cabanac@wedding.local`
+- Ex : `"Eunice"` → `eunice@wedding.local`
+
+**Le `full_name` dans `guests` doit correspondre EXACTEMENT à ce que l'utilisateur tape à la connexion.**
+
+### Structure de la table `guests`
+
+Colonnes : `id`, `created_at`, `full_name`, `password` (clair), `user_id`, `push_token` (NULL à la création, rempli automatiquement au 1er login), `gender`
+
+### Procédure de création (3 entrées dans l'ordre)
+
+Via `mcp__plugin_supabase_supabase__execute_sql` (project_id: `sxdgvuqawjehfjexziwu`) :
+
+> **POINTS CRITIQUES — le login échoue si l'un de ces éléments manque :**
+> - `gen_salt('bf', 10)` — coût **10** obligatoire (pas 6, valeur par défaut)
+> - `instance_id = '00000000-0000-0000-0000-000000000000'` — obligatoire
+> - `confirmation_token`, `recovery_token`, `email_change_token_new`, `email_change` → chaînes vides `''` (pas NULL)
+> - `raw_user_meta_data` doit contenir `full_name` et `email_verified: true`
+> - `gender` : valeurs autorisées uniquement `'H'`, `'F'`, `'MA'`, `'FA'`
 
 ```sql
 -- 1. Créer l'utilisateur auth
-INSERT INTO auth.users (id, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, role)
+INSERT INTO auth.users (
+  id, instance_id, email, encrypted_password,
+  email_confirmed_at, confirmed_at, created_at, updated_at,
+  aud, role,
+  raw_app_meta_data, raw_user_meta_data,
+  confirmation_token, recovery_token, email_change_token_new, email_change,
+  is_sso_user, is_anonymous
+)
 VALUES (
   gen_random_uuid(),
+  '00000000-0000-0000-0000-000000000000',
   'prenom.nom@wedding.local',
-  crypt('MotDePasse', gen_salt('bf')),
-  now(), now(), now(),
+  crypt('MotDePasse', gen_salt('bf', 10)),
+  now(), now(), now(), now(),
+  'authenticated', 'authenticated',
   '{"provider":"email","providers":["email"]}',
-  '{}',
-  'authenticated'
+  jsonb_build_object('full_name', 'Prénom Nom', 'email_verified', true),
+  '', '', '', '',
+  false, false
 );
 
 -- 2. Créer l'identité (OBLIGATOIRE, sinon le login échoue)
@@ -30,20 +62,32 @@ VALUES (
   now(), now(), now()
 );
 
--- 3. Créer le profil invité
-INSERT INTO public.guests (user_id, full_name, password, gender)
+-- 3. Créer le profil invité (push_token laissé NULL, sera rempli au 1er login)
+INSERT INTO public.guests (user_id, full_name, password, gender, push_token)
 VALUES (
   (SELECT id FROM auth.users WHERE email = 'prenom.nom@wedding.local'),
-  'Prénom',
+  'Prénom Nom',
   'MotDePasse',
-  'F' -- ou 'M'
+  'H', -- valeurs autorisées : 'H', 'F', 'MA', 'FA'
+  NULL
 );
 ```
 
 **Convention email :** `prenom.nom@wedding.local` (accents normalisés, espaces → points).
+
+### Procédure de suppression/recréation
+
+Avant de supprimer, **toujours vérifier et noter le `push_token`** existant :
+```sql
+SELECT g.push_token, g.full_name, g.gender, au.email
+FROM public.guests g JOIN auth.users au ON au.id = g.user_id
+WHERE g.full_name ILIKE '%prenom%';
+```
+Si `push_token` non NULL : le recréer avec ce token (il sera mis à jour au prochain login de toute façon).
+
 **Vérification post-création :**
 ```sql
-SELECT au.email, (SELECT COUNT(*) FROM auth.identities WHERE user_id = au.id) AS identity_count, g.full_name
+SELECT au.email, (SELECT COUNT(*) FROM auth.identities WHERE user_id = au.id) AS identity_count, g.full_name, g.push_token
 FROM auth.users au JOIN public.guests g ON g.user_id = au.id
 WHERE au.email = 'prenom.nom@wedding.local';
 ```

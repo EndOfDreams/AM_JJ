@@ -10,7 +10,8 @@ import { PremiumHeader } from '../ui/PremiumHeader';
 const { width } = Dimensions.get('window');
 
 // Planning visible uniquement à partir du 6 juin 2026 à 5h00
-const PLANNING_UNLOCK_DATE = new Date(2026, 5, 6, 5, 0, 0);
+// TEMP: déverrouillé pour les screenshots — remettre new Date(2026, 5, 6, 5, 0, 0) après
+const PLANNING_UNLOCK_DATE = new Date(2020, 0, 1);
 
 // --- Types ---
 interface PlanningEvent {

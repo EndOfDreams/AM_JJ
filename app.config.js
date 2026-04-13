@@ -18,7 +18,7 @@ module.exports = {
                 NSPhotoLibraryUsageDescription: "Permettre à $(PRODUCT_NAME) d'accéder à vos photos pour les partager avec les autres invités.",
                 NSPhotoLibraryAddUsageDescription: "Permettre à $(PRODUCT_NAME) de sauvegarder les photos et vidéos dans votre galerie.",
                 // STORE_COMPLIANCE: Required for video recording with audio
-                NSMicrophoneUsageDescription: "Permettre à $(PRODUCT_NAME) d'accéder à votre microphone pour enregistrer des vidéos avec son.",
+                NSMicrophoneUsageDescription: "WedSnap utilise le microphone pour enregistrer le son lors de vos vidéos du mariage. Par exemple, lorsque vous filmez la cérémonie ou le discours des mariés, le son est capturé et partagé avec les autres invités.",
                 // STORE_COMPLIANCE: Declare encryption usage for App Store
                 ITSAppUsesNonExemptEncryption: false
             },
@@ -98,7 +98,7 @@ module.exports = {
                 "expo-camera",
                 {
                     cameraPermission: "Permettre à $(PRODUCT_NAME) d'accéder à votre caméra pour prendre des photos et vidéos de votre événement.",
-                    microphonePermission: "Permettre à $(PRODUCT_NAME) d'accéder à votre microphone pour enregistrer des vidéos avec son."
+                    microphonePermission: "WedSnap utilise le microphone pour enregistrer le son lors de vos vidéos du mariage. Par exemple, lorsque vous filmez la cérémonie ou le discours des mariés, le son est capturé et partagé avec les autres invités."
                 }
             ],
             [

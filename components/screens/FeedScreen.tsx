@@ -763,7 +763,7 @@ const PremiumPostCard: React.FC<{
                     </ScaleButton>
 
                     <ScaleButton
-                        onPress={isOptimistic ? () => Alert.alert('', 'La photo est encore en cours d\'envoi, réessaie dans quelques secondes 📤') : onComment}
+                        onPress={onComment}
                         style={styles.actionButton}
                     >
                         <MessageCircle size={26} color="#1F2937" strokeWidth={2} />
@@ -923,16 +923,14 @@ const PhotoModal: React.FC<{
     const panResponder = useRef(
         PanResponder.create({
             onStartShouldSetPanResponder: () => true,
-            onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 10 || Math.abs(g.dy) > 10,
             onPanResponderMove: (_, g) => {
-                if (Math.abs(g.dy) > Math.abs(g.dx) && g.dy > 0) {
+                if (g.dy > 0) {
                     translateY.setValue(g.dy);
-                } else if (Math.abs(g.dx) > Math.abs(g.dy)) {
-                    translateX.setValue(g.dx);
                 }
             },
+            onPanResponderTerminationRequest: () => false,
             onPanResponderRelease: (_, g) => {
-                if (g.dy > 120 && Math.abs(g.dy) > Math.abs(g.dx)) {
+                if (g.dy > 50 || g.vy > 0.3) {
                     Animated.timing(translateY, {
                         toValue: height,
                         duration: 250,
@@ -968,39 +966,32 @@ const PhotoModal: React.FC<{
 
     return (
         <Modal visible transparent animationType="fade" onRequestClose={handleClose}>
-            <Animated.View style={[styles.modalContainer, { opacity: Animated.multiply(bgOpacityAnim, bgOpacity) }]}>
+            <Animated.View
+                style={[styles.modalContainer, { opacity: Animated.multiply(bgOpacityAnim, bgOpacity) }]}
+                {...panResponder.panHandlers}
+            >
                 <Animated.View
                     style={[
                         styles.modalContentWrapper,
                         { transform: [{ translateX }, { translateY }] },
                     ]}
-                    {...panResponder.panHandlers}
                 >
-                    <ScrollView
-                        maximumZoomScale={3}
-                        minimumZoomScale={1}
-                        showsHorizontalScrollIndicator={false}
-                        showsVerticalScrollIndicator={false}
-                        centerContent
-                        contentContainerStyle={{ width, height, justifyContent: 'center' }}
-                    >
-                        {photo.media_type === 'video' ? (
-                            <Video
-                                source={{ uri: photo.image_url }}
-                                style={{ width, height }}
-                                resizeMode={ResizeMode.CONTAIN}
-                                shouldPlay
-                                isLooping
-                                useNativeControls
-                            />
-                        ) : (
-                            <Image
-                                source={{ uri: photo.image_url }}
-                                style={{ width, height }}
-                                contentFit="contain"
-                            />
-                        )}
-                    </ScrollView>
+                    {photo.media_type === 'video' ? (
+                        <Video
+                            source={{ uri: photo.image_url }}
+                            style={{ width, height }}
+                            resizeMode={ResizeMode.CONTAIN}
+                            shouldPlay
+                            isLooping
+                            useNativeControls
+                        />
+                    ) : (
+                        <Image
+                            source={{ uri: photo.image_url }}
+                            style={{ width, height }}
+                            contentFit="contain"
+                        />
+                    )}
                 </Animated.View>
 
                 <View style={styles.modalVignette} pointerEvents="none" />
@@ -1169,6 +1160,17 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
             setNewPhotoIds(prevNew => { const s = new Set(prevNew); s.add(newItem.id); return s; });
         });
 
+        const uploadedSubscription = DeviceEventEmitter.addListener('media.uploaded', ({ tempId, realId }: { tempId: string, realId: string }) => {
+            pendingReplacementRef.current = { tempId, realId };
+            setPhotos((prev) => {
+                const idx = prev.findIndex(p => String(p.id) === tempId);
+                if (idx === -1) return prev;
+                const next = [...prev];
+                next[idx] = { ...next[idx], id: realId, is_optimistic: false } as any;
+                return next;
+            });
+        });
+
         // Reconnect realtime when app returns from background
         const appStateSubscription = AppState.addEventListener('change', (state) => {
             if (state === 'active') {
@@ -1182,6 +1184,7 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
         return () => {
             if (realtimeCleanupRef.current) realtimeCleanupRef.current();
             subscription.remove();
+            uploadedSubscription.remove();
             appStateSubscription.remove();
         };
     }, []);
@@ -1203,12 +1206,14 @@ export default function FeedScreen({ isFocused = false }: { isFocused?: boolean 
         pendingReplacementRef.current = null;
 
         const queued = pendingCommentsRef.current.get(tempId);
+        const needsSheetUpdate = commentSheetPhotoIdRef.current === tempId;
+
         if (queued?.length) {
             pendingCommentsRef.current.delete(tempId);
-            queued.forEach(({ text, author }) => addComment(realId, author, text).catch(() => {}));
-        }
-
-        if (commentSheetPhotoIdRef.current === tempId) {
+            // Attendre que les commentaires soient commités avant de recharger la sheet
+            Promise.all(queued.map(({ text, author }) => addComment(realId, author, text).catch(() => {})))
+                .then(() => { if (needsSheetUpdate) setCommentSheetPhotoId(realId); });
+        } else if (needsSheetUpdate) {
             setCommentSheetPhotoId(realId);
         }
     }, [photos]);

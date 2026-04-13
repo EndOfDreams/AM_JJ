@@ -8,14 +8,29 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   DeviceEventEmitter,
+  Platform,
   ScrollView,
   StyleSheet,
+  Text,
   useWindowDimensions,
   View
 } from 'react-native';
 
 export default function Home() {
   const { width } = useWindowDimensions();
+
+  if (Platform.isPad) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', padding: 40 }}>
+        <Text style={{ fontSize: 22, fontWeight: '600', textAlign: 'center', color: '#1a1a1a', marginBottom: 12 }}>
+          WedSnap est conçu pour iPhone
+        </Text>
+        <Text style={{ fontSize: 16, textAlign: 'center', color: '#666' }}>
+          Pour une expérience optimale, veuillez utiliser l'application sur iPhone.
+        </Text>
+      </View>
+    );
+  }
   const params = useLocalSearchParams();
   const scrollViewRef = useRef<ScrollView>(null);
   const currentPage = useRef<'Feed' | 'Camera' | 'Planning'>('Camera');
