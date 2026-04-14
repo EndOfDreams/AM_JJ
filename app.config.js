@@ -10,7 +10,7 @@ module.exports = {
         userInterfaceStyle: "light", // STORE_COMPLIANCE: Explicitly set to light until dark mode is fully implemented
         newArchEnabled: true,
         ios: {
-            supportsTablet: false,  // STORE_COMPLIANCE: App is not optimized for iPad
+            supportsTablet: true,
             bundleIdentifier: "com.camilleperes.amjj",
             buildNumber: "1",
             infoPlist: {
