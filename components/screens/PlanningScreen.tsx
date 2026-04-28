@@ -9,9 +9,6 @@ import { PremiumHeader } from '../ui/PremiumHeader';
 
 const { width } = Dimensions.get('window');
 
-// Planning visible uniquement à partir du 6 juin 2026 à 5h00
-// TEMP: déverrouillé pour les screenshots — remettre new Date(2026, 5, 6, 5, 0, 0) après
-const PLANNING_UNLOCK_DATE = new Date(2020, 0, 1);
 
 // --- Types ---
 interface PlanningEvent {
@@ -221,7 +218,17 @@ const EventItem = ({ event, index, currentTime }: { event: PlanningEvent, index:
 export default function PlanningScreen() {
     const [events, setEvents] = useState<PlanningEvent[]>([]);
     const [refreshing, setRefreshing] = useState(false);
-    const [currentTime, setCurrentTime] = useState(new Date()); // Auto-update
+    const [currentTime, setCurrentTime] = useState(new Date());
+    const [planningUnlockDate, setPlanningUnlockDate] = useState<Date>(new Date(2026, 5, 6, 5, 0, 0));
+
+    const fetchUnlockDate = async () => {
+        const { data } = await supabase
+            .from('config')
+            .select('value')
+            .eq('key', 'planning_unlock_date')
+            .single();
+        if (data?.value) setPlanningUnlockDate(new Date(data.value));
+    };
 
     // Timer to check status every minute
     useEffect(() => {
@@ -252,6 +259,7 @@ export default function PlanningScreen() {
     };
 
     useEffect(() => {
+        fetchUnlockDate();
         fetchEvents();
 
         const setupChannel = () => {
@@ -276,6 +284,7 @@ export default function PlanningScreen() {
                 supabase.removeChannel(channel);
                 channel = setupChannel();
                 fetchEvents();
+                fetchUnlockDate();
             }
         });
 
@@ -292,7 +301,7 @@ export default function PlanningScreen() {
 
     const insets = useSafeAreaInsets();
 
-    const isPlanningAvailable = currentTime >= PLANNING_UNLOCK_DATE;
+    const isPlanningAvailable = currentTime >= planningUnlockDate;
 
     return (
         <View style={styles.container}>

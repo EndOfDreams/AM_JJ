@@ -610,7 +610,7 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
 
                     {/* Caption + Send row at bottom — animated up when keyboard opens */}
                     <Animated.View style={[styles.previewBottomArea, {
-                        paddingBottom: 80 + insets.bottom + 16,
+                        paddingBottom: 80 + Math.max(insets.bottom, 16) + 8,
                         transform: [{ translateY: Animated.multiply(keyboardHeight, -1) }],
                     }]}>
                         {/* A3: Caption Input */}
@@ -648,7 +648,7 @@ export default function CameraScreen({ isFocused }: CameraScreenProps) {
             )}
 
             {/* CONTROLS */}
-            <View style={[styles.controlsContainer, { bottom: 80 + insets.bottom }]}>
+            <View style={[styles.controlsContainer, { bottom: 80 + Math.max(insets.bottom, 16) }]}>
                 <TouchableOpacity onPress={switchCamera} style={styles.switchButton}>
                     <RefreshCw color="white" size={24} />
                 </TouchableOpacity>

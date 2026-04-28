@@ -23,6 +23,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { signIn, supabase } from "../lib/supabase";
 import { scale, verticalScale, moderateScale, SCREEN_WIDTH } from "../lib/responsive";
 
@@ -250,6 +251,7 @@ const AnimatedBlob: React.FC<{ index: number }> = ({ index }) => {
 
 export default function Welcome() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [eventCode, setEventCode] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -539,7 +541,7 @@ export default function Welcome() {
         style={styles.keyboardView}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: verticalScale(24) + insets.top }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -847,7 +849,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingVertical: verticalScale(40),
+    paddingBottom: verticalScale(24),
   },
   contentContainer: {
     width: '100%',
@@ -877,13 +879,13 @@ const styles = StyleSheet.create({
   // Logo section
   logoSection: {
     alignItems: 'center',
-    marginBottom: verticalScale(36),
+    marginBottom: verticalScale(20),
     zIndex: 10,
   },
   logoWrapper: {
     position: 'relative',
-    width: scale(220),
-    height: scale(155),
+    width: scale(200),
+    height: verticalScale(140),
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -971,7 +973,7 @@ const styles = StyleSheet.create({
 
   // Card header
   cardHeader: {
-    paddingTop: verticalScale(34),
+    paddingTop: verticalScale(24),
     paddingHorizontal: scale(30),
     alignItems: 'center',
   },
@@ -981,7 +983,7 @@ const styles = StyleSheet.create({
     letterSpacing: 3,
     color: '#FFFFFF',
     textTransform: 'uppercase',
-    marginBottom: 8,
+    marginBottom: verticalScale(6),
     textShadowColor: 'rgba(255, 185, 208, 0.5)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
@@ -992,13 +994,13 @@ const styles = StyleSheet.create({
     letterSpacing: 5,
     color: '#FFFFFF',
     textTransform: 'uppercase',
-    marginBottom: 12,
+    marginBottom: verticalScale(8),
   },
   headerDivider: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 8,
+    marginBottom: verticalScale(5),
     width: 140,
   },
   headerLineGradient: {
@@ -1019,12 +1021,13 @@ const styles = StyleSheet.create({
 
   // Form
   formContainer: {
-    padding: scale(30),
-    paddingTop: scale(26),
-    gap: 22,
+    paddingHorizontal: scale(24),
+    paddingTop: verticalScale(18),
+    paddingBottom: verticalScale(20),
+    gap: verticalScale(16),
   },
   inputGroup: {
-    gap: 10,
+    gap: verticalScale(8),
   },
   inputLabel: {
     fontSize: 10,
@@ -1071,7 +1074,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: 'rgba(229, 231, 235, 0.9)',
     borderRadius: 15,
-    height: verticalScale(54),
+    height: verticalScale(50),
     paddingHorizontal: scale(16),
     position: 'relative',
     overflow: 'hidden',
@@ -1121,10 +1124,10 @@ const styles = StyleSheet.create({
 
   // Button
   buttonWrapper: {
-    marginTop: 10,
+    marginTop: verticalScale(8),
   },
   button: {
-    height: verticalScale(54),
+    height: verticalScale(50),
     borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1161,7 +1164,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 7,
-    paddingVertical: 22,
+    paddingVertical: verticalScale(14),
   },
   decorationDot: {
     width: 3,
