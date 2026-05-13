@@ -3,7 +3,7 @@ module.exports = {
         name: "WedSnap",
         slug: "AM_jj",
         owner: "endofdreams32",
-        version: "1.0.5",
+        version: "1.0.6",
         orientation: "portrait",
         icon: "./assets/images/logo_wedsnap.png",
         scheme: "amjj",
@@ -12,7 +12,7 @@ module.exports = {
         ios: {
             supportsTablet: true,
             bundleIdentifier: "com.camilleperes.amjj",
-            buildNumber: "2",
+            buildNumber: "3",
             infoPlist: {
                 NSCameraUsageDescription: "Permettre à $(PRODUCT_NAME) d'accéder à votre caméra pour prendre des photos et vidéos de votre événement.",
                 NSPhotoLibraryUsageDescription: "Permettre à $(PRODUCT_NAME) d'accéder à vos photos pour les partager avec les autres invités.",

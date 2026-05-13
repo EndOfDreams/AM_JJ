@@ -92,6 +92,23 @@ Deno.serve(async (req) => {
     const nowParis = getNowInParis();
     console.log('[Notif] Current time in Paris:', `${nowParis.hours}:${String(nowParis.minutes).padStart(2, '0')}`);
 
+    // 0. Vérifier que c'est bien le jour autorisé pour les notifications
+    const { data: configData } = await supabase
+      .from('config')
+      .select('value')
+      .eq('key', 'notifications_date')
+      .single();
+
+    const todayParis = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date()); // "YYYY-MM-DD"
+    const notificationsDate = configData?.value?.slice(0, 10);
+
+    if (!notificationsDate || todayParis !== notificationsDate) {
+      console.log(`[Notif] Not the notification day (today: ${todayParis}, allowed: ${notificationsDate})`);
+      return new Response(JSON.stringify({ message: 'Not the notification day' }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
     // 1. Récupérer tous les événements
     const { data: events, error: eventsError } = await supabase
       .from('PlanningEvent')

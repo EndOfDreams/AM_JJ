@@ -42,6 +42,8 @@ yarn-error.*
 
 # Secrets
 google-service-account.json
+credentials.json
+credentials/
 
 # typescript
 *.tsbuildinfo
